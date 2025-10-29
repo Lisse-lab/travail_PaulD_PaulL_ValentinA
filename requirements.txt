@@ -1,0 +1,18 @@
+numpy # Paul set it to >=2.1.2 without any particular reason, but for arlpy, an older version is required (<2).
+matplotlib # >=3.10.0, i am not sure whether arlpy required an older version 
+scipy # >= 1.15.2 for arlpy it needs to be < 1.4
+torch
+torchvision
+librosa
+soundfile
+scikit-maad
+dash
+plotly
+folium
+pyproj
+#attention il faut une version python entre 3.9 et 3.12
+#rajouter arlpy et geopandas (rasterio pour calc_mu)    
+#sometimes hydrophone sensitivity or sample rate is hardcoded in paul's code
+#tqdm, seaborn for ziv_zakai, openpyxl for excel reading
+#nbformat pour affichage
+#jupytext ?

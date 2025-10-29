@@ -1,0 +1,19 @@
+#!/bin/sh
+echo "Post-commit : ajout des fichiers _ntb.py générés..."
+# Récupérer les fichiers _ntb.py qui ont été créés ou modifiés
+py_files=$(git ls-files -o -m --exclude-standard '*_ntb.py')
+
+if [ -z "$py_files" ]; then
+    echo "Aucun fichier _ntb.py à ajouter."
+    exit 0
+fi
+
+# Les ajouter à l’index
+echo "Ajout des fichiers modifiés :"
+echo "$py_files"
+git add $py_files
+
+# Amender le commit pour les inclure
+git commit --amend --no-edit
+
+echo "Commit mis à jour avec les fichiers _ntb.py."

@@ -1,0 +1,11 @@
+__pycache__/
+datas
+results
+*ipynb
+coords_belugas/class_forecast.py
+coords_belugas/cleaning_coords_ntb.py
+coords_belugas/forecasting_ntb.py
+coords_belugas/regression.py
+coords_belugas/tests_ntb.py
+optimization.py
+optimization_ntb.py

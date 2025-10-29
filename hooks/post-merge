@@ -1,0 +1,17 @@
+#!/bin/sh
+echo "Synchronisation des fichiers _ntb.py vers .ipynb après un git pull..."
+
+# Vérification de Jupytext
+if ! python -c "import jupytext" &> /dev/null; then
+    echo "Erreur : Jupytext n'est pas installé. Installez-le avec 'pip install jupytext'."
+    exit 1
+fi
+
+# Création ou mise à jour des .ipynb à partir des _ntb.py
+for py_file in *_ntb.py; do
+    ipynb_file="${py_file/_ntb.py/.ipynb}"
+    echo "Traitement de $py_file -> $ipynb_file..."
+    python -m jupytext --to notebook "$py_file" --output "$ipynb_file"
+done
+
+echo "Synchronisation terminée !"

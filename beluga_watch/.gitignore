@@ -1,0 +1,22 @@
+test_data
+src/__pycache__/
+src/denoising_bricks/__pycache__/
+src/utils/__pycache__/
+core/__pycache__/
+test.ipynb
+src/location_bricks/model/__pycache__/
+audio_gen_tests
+traceCorrelogram.py
+src/detection_bricks/__pycache__/
+jsons/other_parameters
+jsons/gcc_parameters
+jsons/models
+
+.vscode
+__pycache__
+
+docs/figures_readme/.$Code flowchart.drawio.bkp
+docs/figures_readme/Code flowchart.drawio
+readme.pdf
+relevant_benchmarks
+test.py

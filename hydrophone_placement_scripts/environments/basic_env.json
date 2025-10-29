@@ -1,0 +1,25 @@
+{
+  "system_parameters": {
+    "system_sensitivity": -165.1,
+    "sound_speed_in_water": 1450,
+    "enu_ref" : [0, 0, 0]
+  },
+  "tetrahedras": [
+    {
+      "0": {
+        "coordinates_lla": [0, 0, 0],
+        "coordinates_hydrophones": [
+          [0.1732050807568877, 0, 0],
+          [-0.08660254037844385, -0.15, 0],
+          [-0.08660254037844385, 0.15, 0],
+          [0, 0, 0.24494897427831777]
+        ],
+        "rotation_matrix" :  [
+          [1, 0, 0],
+          [0, 1, 0],
+          [1, 0, 1]
+        ]
+      }
+    }
+  ]
+}
