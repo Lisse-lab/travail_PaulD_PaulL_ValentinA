@@ -104,8 +104,6 @@ class Calculator:
         cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax, self.converter.accuracy)
         
     def main_func(self, npoint):
-        self.df_areas["error"] = self.df_areas["w"] * sum(npoint.nbin_coords())
-        return (self.df_areas["w"] / (1+self.df_areas["error"])).sum()
         self.modify_environnement(npoint)
         self.df_areas["error"] = 0
         args = [(npoint.points[k], freq, freq_range, k) for k in range (cls_points.NPoint.n_tetrahedras) for freq, freq_range in zip(self.l_fcs, self.l_freqs_range)]
@@ -130,12 +128,13 @@ class Calculator:
 
     def save_error(self, path):
         self.df_areas["error"].to_csv(os.path.join(path, "error.csv"), sep=";")
+        return None
 
     def load_error(self, path):
         error = pd.read_csv(os.path.join(path, "error.csv"), sep=";")
         error.drop(columns="Unnamed: 0", inplace = True)
         self.df_areas["error"] = error
-
+        return None
 
     def modify_environnement(self, npoint):
         coordinates_hydrophones = self.env.tetrahedras['0'].relative_hydro_coords
@@ -171,9 +170,9 @@ class Calculator:
     def weight_density(self, x, y, d):
             #les points sont en coordoonées d'area et non en coordonnées angulaire
             #à vérifier si quand on prend toute la zone on a des valeurs cohérentes notamment si on a des poids nuls ou quasi (epsilon)
-            n_area = self.topo.dic_depths[(x,y)] / self.converter.depth_area
-            a, b = self.converter.area2utm((x,y))
-            return self.calc_mu.h(a, b) / n_area
+            n_area = np.ceil(self.topo.dic_depths[(x,y)] / self.converter.depth_area)
+            xmin, xmax, ymin, ymax = self.converter.min_max_area((x,y))
+            return self.calc_mu.h_area(xmin, xmax, ymin, ymax) / n_area
 
     def zone_intersects_line(self, row, linestring, l_nav):
         if row.d == 0:
@@ -374,8 +373,8 @@ class Calculator:
             cls_points.NPoint.set_n_tetrahedras(self.n_calc_ranges)
             self.modify_environnement(cls_points.NPointBayesian())
             cls_points.NPoint.set_n_tetrahedras(n_tetrahedras)
+            args = [(req_freq_range[0], req_freq_range[1], k) for req_freq_range in l_to_calculate for k in range(self.n_calc_ranges)]
             if min(self.n_processes, len(args)) > 1:
-                args = [(req_freq_range[0], req_freq_range[1], k) for req_freq_range in l_to_calculate for k in range(self.n_calc_ranges)]
                 with Pool(processes=min(self.n_processes, len(args)),  initializer=self.init_worker) as pool:
                     results = list(pool.imap_unordered(self.get_range, args))
             else:

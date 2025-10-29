@@ -66,6 +66,11 @@ class Conv :
         lat4, lon4 = self.area2lla((area[0]-0.5, area[1]+0.5))
         return [(lon1, lat1), (lon2, lat2), (lon3, lat3), (lon4, lat4), (lon1, lat1)]
     
+    def min_max_area(self, area):
+        xmin, ymin = self.area2utm((area[0]-0.5, area[1]-0.5))
+        xmax, ymax= self.area2utm((area[0]+0.5, area[1]+0.5))
+        return xmin, xmax, ymin, ymax
+    
     #Even though it's already implemented in other parts of the code, I put it here for clarity
     def lla2enu(self, lat, lon, alt=0):
         x, y, z = self.transformer_lla2ecef.transform(lat, lon, alt)

@@ -53,8 +53,17 @@ class Calc_mu:
             ws = [1/(np.sqrt((pixel_coords[0] - x - 0.5)**2 + (pixel_coords[1] - y - 0.5)**2)) for (x, y) in itertools.product(xs, ys)]
             return [(x, y, w/np.sum(ws)) for (x, y), w in zip(itertools.product(xs, ys), ws)]
 
+    def find_points_in(self, xmin, xmax, ymin, ymax):
+        pixel_coords_min = ~self.transform * (xmin, ymax)
+        pixel_coords_max = ~self.transform * (xmax, ymin)
+        xpix1 = max(np.floor(pixel_coords_min[0] - 0.5).astype(int), 0)
+        ypix1 = max(np.floor(pixel_coords_min[1] - 0.5).astype(int), 0)
+        xpix2 = min(np.floor(pixel_coords_max[0] - 0.5) .astype(int), self.width)
+        ypix2 = min(np.floor(pixel_coords_max[1] - 0.5).astype(int), self.height)
+        return [(x, y) for x in range (xpix1, xpix2+1) for y in range(ypix1, ypix2+1)]
+
     def h_pix(self, x, y):
-        assert (x % 1 == 0) & (y % 1 == 0), "x and y must be integers (float but representing an integer)"
+        assert (x % 1 == 0) & (y % 1 == 0), "x and y must be integers (floats but representing an integers)"
         if self.data[int(y),int(x)] == 0:
             return 2 * np.finfo(float).eps
         elif self.data[int(y),int(x)] < 0:
@@ -119,6 +128,13 @@ class Calc_mu:
         for e in l:
             s += self.h_pix(e[0], e[1]) * e[2]
         return s
+
+    def h_area(self, xmin, xmax, ymin, ymax):
+        l = self.find_points_in(xmin, xmax, ymin, ymax)
+        if len(l) > 0:
+            return np.mean([self.h_pix(x, y) for x, y in l])
+        else :
+            return self.h((xmin+xmax)/2, (ymin+ymax)/2)
 
     def mu(self, x, y):
         l = self.find_square(x,y)
