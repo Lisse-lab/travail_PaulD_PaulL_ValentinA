@@ -12,21 +12,23 @@ import numpy as np
 
 class Conv :
 
-    def __init__(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy):
-        self.accuracy = accuracy
-        self.lat_min = lat_min
-        self.lat_max = lat_max
-        self.lon_min = lon_min
-        self.lon_max = lon_max
-        self.width_area = width_area
-        self.depth_area = depth_area
+    def __init__(self, lat_min = None, lat_max = None, lon_min = None, lon_max = None, width_area = None, depth_area = None, accuracy = None):
         self.transformer_lla2utm = Transformer.from_crs("EPSG:4326", "EPSG:26919")
         self.transformer_utm2lla = Transformer.from_crs("EPSG:26919", "EPSG:4326")
-        self.xmin, self.ymin = self.transformer_lla2utm.transform(lat_min, lon_min)
-        self.xmax, self.ymax = self.transformer_lla2utm.transform(lat_max, lon_max)
-        self.n_areas_x, self.n_areas_y = np.ceil((self.xmax - self.xmin)/self.width_area).astype(int), np.ceil((self.ymax-self.ymin)/self.width_area).astype(int)
         self.transformer_lla2ecef = Transformer.from_crs('epsg:4326', 'epsg:4978')
         self.transformer_ecef2lla = Transformer.from_crs("epsg:4978", "epsg:4326")
+        if not ((lat_min is None) | (lat_max is None) | (lon_min is None) | (lon_max is None)):
+            self.lat_min = lat_min
+            self.lat_max = lat_max
+            self.lon_min = lon_min
+            self.lon_max = lon_max
+            self.xmin, self.ymin = self.transformer_lla2utm.transform(lat_min, lon_min)
+            self.xmax, self.ymax = self.transformer_lla2utm.transform(lat_max, lon_max)
+            if not ((width_area is None) | (depth_area is None) | (accuracy is None)):
+                self.accuracy = accuracy
+                self.width_area = width_area
+                self.depth_area = depth_area
+                self.n_areas_x, self.n_areas_y = np.ceil((self.xmax - self.xmin)/self.width_area).astype(int), np.ceil((self.ymax-self.ymin)/self.width_area).astype(int)
         return None
 
     def in_area(self, x, y):
@@ -71,6 +73,22 @@ class Conv :
         xmax, ymax= self.area2utm((area[0]+0.5, area[1]+0.5))
         return xmin, xmax, ymin, ymax
     
+    def area_in_area(self, area):
+        x, y = self.area2utm(area)
+        return self.in_area(x, y)
+
+    def n_depth_area(self, depth):
+        return np.round(depth/self.converter.depth_area).astype(int)
+
+    def depth_m2area(self, depth):
+        return np.floor(depth/self.depth_area).astype(int)
+    
+    def depth_area2m(self, d):
+        return (d+0.5)*self.depth_area
+
+    def create_depthsb(self, dmax):
+        return np.arange(0.5, np.ceil(dmax/self.depth_area -0.5), 1) * self.depth_area
+
     #Even though it's already implemented in other parts of the code, I put it here for clarity
     def lla2enu(self, lat, lon, alt=0):
         x, y, z = self.transformer_lla2ecef.transform(lat, lon, alt)

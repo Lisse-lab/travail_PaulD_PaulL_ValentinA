@@ -3,6 +3,15 @@ import os
 import pandas as pd
 import numpy as np
 
+if __name__ == "__main__":
+    import folium
+    from shapely.geometry import Polygon
+    import branca.colormap as cm
+    import sys
+    sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
+    import hydrophone_placement_scripts.utils_scripts.conversions_coordinates as conv
+
+
 import hydrophone_placement_scripts.utils_scripts.utils as ut
 
 class Topo:
@@ -78,7 +87,7 @@ class Topo:
 
         a = xmax - xmin
         b = ymax - ymin
-        depths = [[0,self.dic_depths[areat]]]
+        depths = [[0, self.dic_depths.get(areat, 0)]]
         substrat = np.array([0.,0.,0.])
         substrat += self.dic_substrats[areat]
         compt = 0
@@ -86,16 +95,16 @@ class Topo:
         for x in np.arange((0.5 + np.floor(xmin+0.5).astype(int)), - 0.5 + np.ceil(xmax+0.5).astype(int)):
             t = (x - xmin) / a
             y = b * t + ymin
-            dist = np.round(self.converter.dist_areas(areat, (x,y)))
+            dist = np.round(self.converter.dist_areas(areat, (x,y))).astype(int)
             if y % 1 == 0.5:
-                depth = 1/4 * (self.dic_depths[int(x),int(y)] + self.dic_depths[(int(x+1),int(y))] + self.dic_depths[(int(x),int(y+1))] + self.dic_depths[(int(x+1),int(y+1))])
+                depth = 1/4 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x+1),int(y)), 0) + self.dic_depths.get((int(x),int(y+1)),0) + self.dic_depths.get((int(x+1),int(y+1)), 0))
                 if ut.sort_insert_depth([dist, depth], depths):
                     bool, sub = self.additional_substrat(int(x), int(y), "xy")
                     if bool:
                         substrat += sub
                         compt += 1
             else: 
-                depth = 1/2 * (self.dic_depths[(int(x),int(y))] + self.dic_depths[(int(x+1),int(y))])
+                depth = 1/2 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x+1),int(y)), 0))
                 if ut.sort_insert_depth([dist, depth], depths):
                     bool, sub = self.additional_substrat(int(x), int(y), "x")
                     if bool:
@@ -110,54 +119,87 @@ class Topo:
         for y in np.arange(0.5 + np.floor(ymin+0.5).astype(int), - 0.5 + np.ceil(ymax+0.5).astype(int)):
             t = (y - ymin) / b
             x = a * t + xmin
-            dist = np.round(self.converter.dist_areas(areat, (x,y)))
+            dist = np.round(self.converter.dist_areas(areat, (x,y))).astype(int)
             if x % 1 != 0.5:
-                depth = 1/2 * (self.dic_depths[(int(x),int(y))] + self.dic_depths[(int(x),int(y+1))])
+                depth = 1/2 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x),int(y+1)), 0))
                 if ut.sort_insert_depth([dist, depth], depths):
                     bool, sub = self.additional_substrat(int(x), int(y), "y")
                     if bool:
                         substrat += sub
                         compt += 1
 
-        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)), self.dic_depths[self.converter.round_area(arear)]], depths)
-        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)+1), self.dic_depths[self.converter.round_area(arear)]], depths) #only to be sure that the last point is after the reception point
-        substrat += self.dic_substrats[self.converter.round_area(arear)]
-        compt += 1
+        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)).astype(int), self.dic_depths.get(self.converter.round_area(arear), 0)], depths)
+        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)+1).astype(int), self.dic_depths.get(self.converter.round_area(arear), 0)], depths) #only to be sure that the last point is after the reception point
+        if self.converter.round_area(arear) in self.dic_substrats.keys():
+            substrat += self.dic_substrats[self.converter.round_area(arear)]
+            compt += 1
         #print(depths)
         return (np.array(depths), substrat/compt)         
     
     def additional_substrat(self, x, y, str):
         substrat = np.array([0.,0.,0.])
         compt = 0
-        if str == "x":
-            if self.dic_substrats[(x,y)][0] != 0:
-                substrat += self.dic_substrats[(x,y)]
-                compt += 1
-            if self.dic_substrats[(x+1,y)][0] != 0:
-                substrat += self.dic_substrats[(x+1,y)]
-                compt += 1
-        elif str == "y":
-            if self.dic_substrats[(x,y)][0] != 0:
-                substrat += self.dic_substrats[(x,y)]
-                compt += 1
-            if self.dic_substrats[(x+1,y)][0] != 0:
-                substrat += self.dic_substrats[(x,y+1)]
-                compt += 1
-        else:
-            if self.dic_substrats[(x,y)][0] != 0:
-                substrat += self.dic_substrats[(x,y)]
-                compt += 1
-            if self.dic_substrats[(x+1,y)][0] != 0:
-                substrat += self.dic_substrats[(x+1,y)]
-                compt += 1
-            if self.dic_substrats[(x,y+1)][0] != 0:
-                substrat += self.dic_substrats[(x,y+1)]
-                compt += 1
-            if self.dic_substrats[(x+1,y+1)][0] != 0:
-                substrat += self.dic_substrats[(x+1,y+1)]
-                compt += 1
+        if (x, y) in self.dic_substrats.keys():
+            if str == "x":
+                if self.dic_substrats[(x,y)][0] != 0:
+                    substrat += self.dic_substrats[(x,y)]
+                    compt += 1
+                if self.dic_substrats[(x+1,y)][0] != 0:
+                    substrat += self.dic_substrats[(x+1,y)]
+                    compt += 1
+            elif str == "y":
+                if self.dic_substrats[(x,y)][0] != 0:
+                    substrat += self.dic_substrats[(x,y)]
+                    compt += 1
+                if self.dic_substrats[(x+1,y)][0] != 0:
+                    substrat += self.dic_substrats[(x,y+1)]
+                    compt += 1
+            else:
+                if self.dic_substrats[(x,y)][0] != 0:
+                    substrat += self.dic_substrats[(x,y)]
+                    compt += 1
+                if self.dic_substrats[(x+1,y)][0] != 0:
+                    substrat += self.dic_substrats[(x+1,y)]
+                    compt += 1
+                if self.dic_substrats[(x,y+1)][0] != 0:
+                    substrat += self.dic_substrats[(x,y+1)]
+                    compt += 1
+                if self.dic_substrats[(x+1,y+1)][0] != 0:
+                    substrat += self.dic_substrats[(x+1,y+1)]
+                    compt += 1
         if compt >0:
             return (True, substrat / compt)
         else:
             return (False, substrat)
         
+if __name__ == "__main__":
+    lat_min = 47.65
+    lat_max = 48.07
+    lon_min = -70.04
+    lon_max = -69.28
+    width_area = 1000
+    depth_area = 5
+    accuracy = 1
+
+    converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy)
+    topo = Topo(converter)
+    df = pd.DataFrame([(x, y, d) for (x, y), d in topo.dic_depths.items()], columns=['x', 'y', 'depth'])
+    df = df[df.apply(lambda row : topo.converter.area_in_area((row.x, row.y)), axis = 1)]
+    df["polygone"] = df.apply(lambda row : Polygon(topo.converter.area2perim_lla((row.x, row.y))), axis=1)
+    map = folium.Map(location=[(topo.converter.lat_min + topo.converter.lat_max)/2, (topo.converter.lon_min + topo.converter.lon_max)/2], zoom_start=11)
+    colormap = cm.LinearColormap(colors=['blue', 'red'], vmin=df["depth"].min(), vmax=df["depth"].max(), caption="Depth")
+    colormap.add_to(map)
+    for row in df.itertuples():
+        couleur = colormap(row.depth)
+        folium.GeoJson(
+            row.polygone,
+            style_function=lambda _, couleur=couleur, alpha=0.7: {
+                'fillColor': couleur,
+                'color': 'black',
+                'weight': 1,
+                'fillOpacity': alpha,
+            }
+        ).add_to(map)
+    map.save(os.path.join(os.path.dirname(__file__), "../results/map_depths.html"))
+
+    #A map would be created in results with the different depths, if there is an issue it might be because a dic_depths has been saved with other specifications (lat_min, lat_max, ...)

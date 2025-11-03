@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import matplotlib.pyplot as plt
 
 def bin_inf(b1 , b2):
     assert len(b1) == len(b2), "two binaries do not have the same size"
@@ -113,3 +114,69 @@ def comb(i, j, area):
         return [(area[0] + i, area[1] + j), (area[0] - j, area[1] + i), (area[0] - i, area[1] - j), (area[0] + j, area[1] - i)]
     else:
         return [(area[0] + i, area[1] + j), (area[0] + j, area[1] + i), (area[0] - i, area[1] + j), (area[0] + j, area[1] - i), (area[0] + i, area[1] - j), (area[0] - j, area[1] + i), (area[0] - i,area[1] -j), (area[0] - j, area[1] - i)]
+
+def norme(x, y):
+    return np.sqrt(x**2+y**2)
+
+def get_points_to_calculate(angle_max, points_tried, angles_diff, dic_to_calc, mat_which_value):
+    def rec_f (ind, previous, angle):
+        p = points_tried[ind]
+        pgcd = np.gcd(p[0],p[1])
+        if (p[0]//pgcd, p[1]//pgcd) in dic_to_calc.keys():
+            dic_to_calc[(p[0]//pgcd, p[1]//pgcd)] += 1
+            if ind + 1 < len(points_tried):
+                rec_f(ind + 1, p, 0)
+            mat_which_value[p] = [p] 
+            return p
+        else:
+            if (previous is None) | (angle + angles_diff[ind] > angle_max):
+                dic_to_calc[(p[0]//pgcd, p[1]//pgcd)] = 1
+                if ind + 1 < len(points_tried):
+                    rec_f(ind + 1, p, 0)
+                mat_which_value[p] = [p] 
+                return p
+            else:
+                if ind + 1 < len(points_tried):
+                    next = rec_f(ind+1, previous, angle + angles_diff[ind])
+                    mat_which_value[p] = [previous, next]
+                    return next
+                else:
+                    dic_to_calc[(p[0]//pgcd, p[1]//pgcd)] = 1
+                    if ind + 1 < len(points_tried):
+                        rec_f(ind + 1, p, 0)
+                    mat_which_value[p] = [p] 
+                    return p
+    rec_f(0, None, 0)
+    return dic_to_calc, mat_which_value
+
+def get_to_calculate(angle, n_areas):
+    mat_which_value = np.empty((n_areas,n_areas), dtype=object)
+    dic_to_calc = {}
+    dic_to_calc[0,0] = 1
+    mat_which_value[0,0] = [(0,0)]
+    for k in range (1,n_areas):
+        i = 0
+        l = []
+        while i <= k:
+            j = 0
+            while (j <= i):
+                if k - 1< norme(i,j) <= k:
+                    l.append((i,j))
+                j+=1
+            i+=1
+        l_angles = [np.arctan(e[1]/e[0]) for e in l]
+        ind_sorted = np.argsort(l_angles)
+        points_tried = [l[i] for i in ind_sorted]
+        angles_tried = [l_angles[i] for i in ind_sorted]
+        angles_diff = [0] + [angles_tried[i+1] - angles_tried[i] for i in range (len(angles_tried) - 1)]
+        get_points_to_calculate(angle, points_tried, angles_diff, dic_to_calc, mat_which_value)
+    return dic_to_calc, mat_which_value
+
+def visualize_mat_which_value(mat_which_value):
+    n = mat_which_value.shape[0]
+    mat_test = np.zeros((n,n))
+    for i in range(n):
+        for j in range(n):
+            if not mat_which_value[i, j] is None:
+                mat_test[i,j] = len(mat_which_value[i,j])
+    plt.imshow(mat_test)

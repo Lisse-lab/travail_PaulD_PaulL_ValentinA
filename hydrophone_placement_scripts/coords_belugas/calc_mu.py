@@ -9,8 +9,8 @@ class Calc_mu:
         self.height = dataset.height
         self.width = dataset.width
         self.transform = dataset.transform
-        self.setp_x = np.abs(self.transform[0]) # Note: The real-world and dataset frames are assumed to be aligned.
-        self.setp_y = np.abs(self.transform[4])
+        self.step_x = np.abs(self.transform[0]) # Note: The real-world and dataset frames are assumed to be aligned.
+        self.step_y = np.abs(self.transform[4])
         if not sigma2 is None:
             self.sigma2 = sigma2
     
