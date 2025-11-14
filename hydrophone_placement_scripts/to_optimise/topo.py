@@ -144,29 +144,34 @@ class Topo:
                 if self.dic_substrats[(x,y)][0] != 0:
                     substrat += self.dic_substrats[(x,y)]
                     compt += 1
-                if self.dic_substrats[(x+1,y)][0] != 0:
-                    substrat += self.dic_substrats[(x+1,y)]
-                    compt += 1
+                if (x+1, y) in self.dic_substrats.keys():
+                    if self.dic_substrats[(x+1,y)][0] != 0:
+                        substrat += self.dic_substrats[(x+1,y)]
+                        compt += 1
             elif str == "y":
                 if self.dic_substrats[(x,y)][0] != 0:
                     substrat += self.dic_substrats[(x,y)]
                     compt += 1
-                if self.dic_substrats[(x+1,y)][0] != 0:
-                    substrat += self.dic_substrats[(x,y+1)]
-                    compt += 1
+                if (x, y+1) in self.dic_substrats.keys():
+                    if self.dic_substrats[(x,y+1)][0] != 0:
+                        substrat += self.dic_substrats[(x,y+1)]
+                        compt += 1
             else:
                 if self.dic_substrats[(x,y)][0] != 0:
                     substrat += self.dic_substrats[(x,y)]
                     compt += 1
-                if self.dic_substrats[(x+1,y)][0] != 0:
-                    substrat += self.dic_substrats[(x+1,y)]
-                    compt += 1
-                if self.dic_substrats[(x,y+1)][0] != 0:
-                    substrat += self.dic_substrats[(x,y+1)]
-                    compt += 1
-                if self.dic_substrats[(x+1,y+1)][0] != 0:
-                    substrat += self.dic_substrats[(x+1,y+1)]
-                    compt += 1
+                if (x+1, y) in self.dic_substrats.keys():
+                    if self.dic_substrats[(x+1,y)][0] != 0:
+                        substrat += self.dic_substrats[(x+1,y)]
+                        compt += 1
+                if (x, y+1) in self.dic_substrats.keys():
+                    if self.dic_substrats[(x,y+1)][0] != 0:
+                        substrat += self.dic_substrats[(x,y+1)]
+                        compt += 1
+                if (x+1, y+1) in self.dic_substrats.keys():
+                    if self.dic_substrats[(x+1,y+1)][0] != 0:
+                        substrat += self.dic_substrats[(x+1,y+1)]
+                        compt += 1
         if compt >0:
             return (True, substrat / compt)
         else:

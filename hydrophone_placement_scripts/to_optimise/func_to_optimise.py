@@ -60,14 +60,12 @@ class Calculator:
         
         self.calc_mu = Calc_mu(self.geotiff_path)
 
-        self.l_fcs = self.l_fcs
-        self.l_freqs_range = self.l_freqs_range
+        self.sample_rate = self.sample_rate
+        self.noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.l_fcs, self.l_freqs_range) #we only use one sec because there are not a lot of differences with more time
+        self.boat_noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.boat_freqs, [(f-10, f+10) for f in self.boat_freqs])
 
         self.topo = topo.Topo(self.converter, new_dic_depths=new_dics, new_dic_substrats=new_dics)
         self.create_df_areas(new = new_dics)
-
-        self.sample_rate = self.sample_rate
-        self.noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate)) #we only use one sec because there are not a lot of differences with more time
 
         if self.one_meter:
             self.env = Environment(os.path.join(os.path.dirname(__file__), "../environments/basic_env_one_meter.json"), use_h4=True)
@@ -203,7 +201,7 @@ class Calculator:
         df_areas["nav_exp"] = 0
         for areat in l_nav:
             for freq in self.boat_freqs:
-                n_areas = self.range_ultra_max / self.converter.width_area
+                n_areas = int(self.range_ultra_max / self.converter.width_area)
             #     l = ut.comb(n,0,areat) + ut.comb(n,n, areat)
             #     l_col_max = []
             #     for u, v in l:
@@ -218,12 +216,12 @@ class Calculator:
             #     n_areas = np.ceil(np.max(l_col_max) * self.mult_range / self.converter.width_area).astype(int)
             #     print("Range max for navigatio is : ", np.max(l_col_max))
                 dic_to_calc, mat_which_value = ut.get_to_calculate(self.angle_calc, 1 + n_areas)
-                s_tloss = pd.Series(index=self.df_areas.index, dtype=float)
+                s_tloss = pd.Series(index=df_areas.index, dtype=float)
                 dic_to_calc_range = {}
                 for ij, n in dic_to_calc.items():
                     i, j = ij[0], ij[1]
                     if i == 0:
-                        s_tloss[((tlosses["x"] == areat[0]) & (tlosses["y"] == areat[1]))] = self.source_level_beluga - self.noises[freq]
+                        s_tloss[((df_areas["x"] == areat[0]) & (df_areas["y"] == areat[1]))] = self.source_level_beluga - self.boat_noises[freq]
                         dic_to_calc_range[0] = True
                     dist = np.ceil(ut.norme(i, j)).astype(int)
                     if dic_to_calc_range.get(dist - 1, False):
@@ -235,8 +233,8 @@ class Calculator:
                                 tlosses = self.tloss(0, depthsb, n, freq, depths, substrat)
                                 for m, col in enumerate(tlosses.columns):
                                     x, y = areat[0] + i*(m+1), areat[1] + j*(m+1)
-                                    mask = ((self.df_areas["x"] == x) & (self.df_areas["y"] == y))
-                                    s_tloss[mask] = max(tlosses[col].iloc[:mask.sum()], 0)
+                                    mask = ((df_areas["x"] == x) & (df_areas["y"] == y))
+                                    s_tloss[mask] = tlosses[col].iloc[:mask.sum()].apply(lambda val : max(val, 0))
                                     dist2 = np.ceil((m+1)*ut.norme(i,j)).astype(int)
                                     dic_to_calc_range[dist2] = dic_to_calc_range.get(dist2, False) | (s_tloss[mask] > 0).any()
 
@@ -287,9 +285,9 @@ class Calculator:
                             df_areas.at[n, "y"] = j
                             df_areas.at[n, "d"] = k
                             df_areas.at[n, "w"] = 1
+                            df_areas.at[n, "weight_density"] = self.weight_density(i, j, k) #les points sont en coordoonées d'area et non en coordonnées angulaire
                             n += 1
-            df_areas["weight_density"] = self.weight_density(df_areas["x"], df_areas["j"], df_areas["k"]) #les points sont en coordoonées d'area et non en coordonnées angulaire
-            self.calc_nav_exp(df_areas)
+            self.calc_nav_weight(df_areas)
             df_areas["w"] = df_areas["weight_density"] * df_areas["nav_weight"]
             print("df_areas created")
             df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
@@ -297,11 +295,10 @@ class Calculator:
         return None
 
 ### Acoustic losses
-    def get_noises(self, list_noises):
+    def get_noises(self, list_noises, l_fcs, l_freqs_range):
         noises = {}
-        for f, freq_range in zip(self.l_fcs, self.l_freqs_range):
-            for noise in list_noises:
-                noises[f] = (10 * np.log10(spectral_power(noise/self.audio_system_gain, self.sample_rate, freq_range) / (freq_range[1] - freq_range[0]) / noise.shape[1]*self.sample_rate) - self.system_sensitivity).mean()  #/ noise.shape[1]*self.sample_rate is for normalisation
+        for f, freq_range in zip(l_fcs, l_freqs_range):
+                noises[f] =np.mean([10 * np.log10(spectral_power(noise/self.audio_system_gain, self.sample_rate, freq_range) / (freq_range[1] - freq_range[0]) / noise.shape[1]*self.sample_rate) - self.system_sensitivity for noise in list_noises])  #/ noise.shape[1]*self.sample_rate is for normalisation
         return noises
     
     def calc_snr_dB(self, depthh, depthsb, n_areas, freq, depths, substrat):
@@ -439,8 +436,8 @@ class Calculator:
             dic_ranges = {freq_freq_range[0] : [] for freq_freq_range in l_to_calculate}
             for freq, r in results:
                 dic_ranges[freq].append(r)   
-            for freq_freq_range in l_to_calculate:    
-                df_ranges.loc[len(df_ranges)] = (self.source_level_beluga, freq_freq_range[0], freq_freq_range[1][0], freq_freq_range[1][1], self.noises[freq], np.mean(dic_ranges[freq_freq_range[0]]), np.var(dic_ranges[freq_freq_range[0]], ddof=1), np.max(dic_ranges[freq_freq_range[0]]))
+            for freq_freq_range in l_to_calculate:
+                df_ranges.loc[len(df_ranges)] = [self.source_level_beluga, freq_freq_range[0], freq_freq_range[1][0], freq_freq_range[1][1], self.noises[freq], np.mean(dic_ranges[freq_freq_range[0]]), np.var(dic_ranges[freq_freq_range[0]], ddof=1), np.max(dic_ranges[freq_freq_range[0]])]
             df_ranges.to_csv(os.path.join(self.path, "df_ranges.csv"), sep=";")
             print("df_ranges created/modified")
         for freq, freq_range in zip(self.l_fcs, self.l_freqs_range):
@@ -461,10 +458,9 @@ class Calculator:
                 col_max = snr_dB.columns[0]
                 for col in snr_dB.columns:
                     if snr_dB.apply(lambda row : self.calc_tdoa_errors_hydro(row[col], k, freq, freq_range)[1], axis=1).any():
-                        print(col)
                         col_max = col
                 l_ranges.append(col_max)
-        return freq, l_ranges
+        return freq, np.max(l_ranges)
 
 """
     def update_ranges(self, results):

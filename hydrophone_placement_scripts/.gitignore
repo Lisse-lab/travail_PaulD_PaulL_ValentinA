@@ -7,5 +7,8 @@ coords_belugas/cleaning_coords_ntb.py
 coords_belugas/forecasting_ntb.py
 coords_belugas/regression.py
 coords_belugas/tests_ntb.py
+coords_belugas/explore_gaussian_ntb.py
+coords_belugas/explore_gaussian2_ntb.py
+coords_belugas/forecasting_error_ou_ntb.py
 optimization.py
 optimization_ntb.py

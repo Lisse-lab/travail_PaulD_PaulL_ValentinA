@@ -149,12 +149,12 @@ def get_points_to_calculate(angle_max, points_tried, angles_diff, dic_to_calc, m
     rec_f(0, None, 0)
     return dic_to_calc, mat_which_value
 
-def get_to_calculate(angle, n_areas):
-    mat_which_value = np.empty((n_areas,n_areas), dtype=object)
+def get_to_calculate(angle, n):
+    mat_which_value = np.empty((n,n), dtype=object)
     dic_to_calc = {}
     dic_to_calc[0,0] = 1
     mat_which_value[0,0] = [(0,0)]
-    for k in range (1,n_areas):
+    for k in range (1,n):
         i = 0
         l = []
         while i <= k:

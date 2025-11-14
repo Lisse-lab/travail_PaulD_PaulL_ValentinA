@@ -78,7 +78,7 @@ class Conv :
         return self.in_area(x, y)
 
     def n_depth_area(self, depth):
-        return np.round(depth/self.converter.depth_area).astype(int)
+        return np.round(depth/self.depth_area).astype(int)
 
     def depth_m2area(self, depth):
         return np.floor(depth/self.depth_area).astype(int)

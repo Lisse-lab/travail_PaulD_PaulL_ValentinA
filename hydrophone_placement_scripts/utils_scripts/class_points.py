@@ -14,7 +14,7 @@ class Point:
     ly = np.ceil(np.log2(1 + (ymax-ymin)/accuracy)).astype(int)
     dx = (xmax-xmin)/(2**lx-1)
     dy = (ymax-ymin)/(2**ly-1)
-    log_params_cor = np.log([2, 2, 1/2/(40**2), 2, 2, 2]) #utils.esp_diff(xmax-xmin), 40 is an average 
+    params_cor = np.array([2, 2, 1/2/(40**2)]) #utils.esp_diff(xmax-xmin), 40 is an average 
     topo = None
     height_sensor = None
     
@@ -29,7 +29,7 @@ class Point:
         cls.ly = np.ceil(np.log2(1 + (ymax-ymin)/cls.accuracy)).astype(int)
         cls.dx = (xmax - xmin)/(2**cls.lx-1)
         cls.dy = (ymax - ymin)/(2**cls.ly-1)
-        cls.log_params_cor = np.log([2/((xmax - xmin)**2), 2/((ymax - ymin)**2), 1/2/(40**2)])
+        cls.params_cor = np.array([2/((xmax - xmin)**2), 2/((ymax - ymin)**2), 1/2/(40**2)])
         return None
 
     @classmethod
@@ -72,9 +72,9 @@ class Point:
         return self.dist_withdepth(c[0], c[1], d)
         
     def norme(self, other):
-        return (np.exp(self.log_params_cor[0]) * ((abs(self.coords[0] - other.coords[0])) ** 2)
-                + np.exp(self.log_params_cor[1]) * ((abs(self.coords[1] - other.coords[1])) ** 2)
-                + np.exp(self.log_params_cor[2]) * ((abs(self.depth() - other.depth())) ** 2))
+        return (self.params_cor[0] * ((abs(self.coords[0] - other.coords[0])) ** 2)
+                + self.params_cor[1] * ((abs(self.coords[1] - other.coords[1])) ** 2)
+                + self.params_cor[2] * ((abs(self.depth() - other.depth())) ** 2))
 
     def inf(self, other):
         return ut.bin_inf(self.bin_coords, other.bin_coords)

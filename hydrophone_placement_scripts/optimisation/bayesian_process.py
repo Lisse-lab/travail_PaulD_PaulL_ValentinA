@@ -13,6 +13,8 @@ class Bayesian_Process:
     min_expected_improvement = 0.001
     max_iter = 250
     ksi = 0.01
+    sigma = 1
+    sigmaf = 0.1
 
     def __init__(self, path = None, l_nbin_coords = None, values = None, expected_improvements = None):
         self.path = path
@@ -35,23 +37,27 @@ class Bayesian_Process:
             setattr(self, attr, value)
         self.kwargs_ga = {k[3:]: v for k, v in kwargs.items() if k.startswith("ga_")}
 
-    def update_R_invR(self):
-        self.R = np.matrix([[npoint1.corr(npoint2) for npoint2 in self.set_of_npointsbayesian.set_of_npoints] for npoint1 in self.set_of_npointsbayesian.set_of_npoints])
-        self.invR = np.linalg.inv(self.R)
+    def update_Sigma_invSigma(self):
+        self.Sigma = self.sigma ** 2 * np.matrix([[npoint1.corr(npoint2) for npoint2 in self.set_of_npointsbayesian.set_of_npoints] for npoint1 in self.set_of_npointsbayesian.set_of_npoints]) + self.sigmaf ** 2 * np.eye(self.set_of_npointsbayesian.size)
+        self.invSigma = np.linalg.inv(self.Sigma)
 
     def update_mu_varf(self):
-        self.mu = (np.ones(self.set_of_npointsbayesian.size)@self.invR@self.set_of_npointsbayesian.values)[0,0] / (np.ones(self.set_of_npointsbayesian.size)@self.invR@np.ones(self.set_of_npointsbayesian.size))[0,0]
-        self.varf = 1/self.set_of_npointsbayesian.size * ([v - self.mu for v in self.set_of_npointsbayesian.values]@self.invR@[v - self.mu for v in self.set_of_npointsbayesian.values])[0,0]
+        self.mu = (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@self.set_of_npointsbayesian.values)[0,0] / (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@np.ones(self.set_of_npointsbayesian.size))[0,0]
+        self.varf = 1/self.set_of_npointsbayesian.size * ([v - self.mu for v in self.set_of_npointsbayesian.values]@self.invSigma@[v - self.mu for v in self.set_of_npointsbayesian.values])[0,0]
 
     def neg_log_likelihood(self, params):
-        cls_points.Point.log_params_cor = params
+        cls_points.Point.log_params_cor = params[2:]
+        self.sigma = params[0]
+        self.sigmaf = params[1]
         self.update_R_invR()
         self.update_mu_varf()
-        return ut.log(np.linalg.det(self.R)) + self.set_of_npointsbayesian.size/2*ut.log(self.varf)
+        return ut.log(np.linalg.det(self.Sigma)) + self.set_of_npointsbayesian.size/2*ut.log(self.varf)
 
     def max_likelihood(self):
         print("Maximisation of likelihood")
-        result = optimize.minimize(self.neg_log_likelihood, cls_points.Point.log_params_cor, method="Nelder-Mead", options={"disp" : True, "maxiter" : 1200})
+        bounds = [(0, None) for _ in range(5)]
+        params = np.concatenate(([self.sigma, self.sigmaf, cls_points.Point.log_params_cor]))
+        result = optimize.minimize(self.neg_log_likelihood, params, method="Nelder-Mead", bounds = bounds, options={"disp" : True, "maxiter" : 1200})
         self.neg_log_likelihood(result.x)        
     
     def find_max(self, converter, calculator):
@@ -89,8 +95,8 @@ class Bayesian_Process:
     def esp_improv(self, npoint):
         if npoint.in_water() & npoint.verify_range():
             r = np.matrix([npoint.corr(e) for e in self.set_of_npointsbayesian.set_of_npoints])
-            fexpec = (r @ self.invR @ self.set_of_npointsbayesian.values)[0,0]
-            s = (self.varf * (1 - r @ self.invR @ r.T))[0,0]
+            fexpec = (r @ self.invSigma @ self.set_of_npointsbayesian.values)[0,0]
+            s = (self.varf * (1 - r @ self.invSigma @ r.T))[0,0]
             a = (fexpec - self.val_max - self.varf * self.ksi)
             return max(a / 2 * (1 + math.erf(a/(2*s))) + s * 1/math.sqrt(2*math.pi) * math.exp(-1/2 * (a/s)**2), 0) #the values should be strictly positive
         else:

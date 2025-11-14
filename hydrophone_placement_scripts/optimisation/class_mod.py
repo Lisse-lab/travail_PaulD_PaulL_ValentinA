@@ -20,6 +20,8 @@ import hydrophone_placement_scripts.to_optimise.func_to_optimise as f
 class Model:
     def __init__(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, n_tetrahedras, accuracy=1, load=False, version=None, new = False, **kwargs):
         self.path = determine_path(n_tetrahedras, load, version)
+        os.makedirs(os.path.join(os.path.dirname(__file__), "../datas/for_model"), exist_ok=True)
+        
         if not new:
             new = self.compare_args(lat_min, lat_max, lon_min, lon_max, width_area, depth_area)
         self.converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy)
