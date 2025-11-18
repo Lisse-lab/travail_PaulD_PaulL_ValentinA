@@ -292,8 +292,8 @@ class Calculator:
                             df_areas.at[n, "w"] = 1
                             df_areas.at[n, "weight_density"] = self.weight_density(i, j, k) #les points sont en coordoonées d'area et non en coordonnées angulaire
                             n += 1
-            #self.calc_nav_weight(df_areas)
-            df_areas["w"] = df_areas["weight_density"]# * df_areas["nav_weight"]
+            self.calc_nav_weight(df_areas)
+            df_areas["w"] = df_areas["weight_density"] * df_areas["nav_weight"]
             print("df_areas created")
             df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
         self.df_areas = df_areas
@@ -367,7 +367,7 @@ class Calculator:
             depths, substrat = self.topo.depths_and_substrat(area, (area[0] + u*n2, area[1] + v*n2))
             depthsb = self.converter.create_depthsb(depths[:,1].max())
             if len(depthsb) > 0:
-                snr_dB = self.calc_snr_dB(point.depth(), depthsb, n, freq, depths, substrat)
+                snr_dB = self.calc_snr_dB(point.depth(), depthsb, n2, freq, depths, substrat)
                 for m, col in enumerate(snr_dB.columns):
                     x, y = area[0] + u*(m+1), area[1] + v*(m+1)
                     mask = ((self.df_areas["x"] == x) & (self.df_areas["y"] == y))
