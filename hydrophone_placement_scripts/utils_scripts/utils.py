@@ -180,3 +180,13 @@ def visualize_mat_which_value(mat_which_value):
             if not mat_which_value[i, j] is None:
                 mat_test[i,j] = len(mat_which_value[i,j])
     plt.imshow(mat_test)
+
+def find_indice_angles(angle, l_angles):
+    ind = 0
+    boolean = True
+    while (ind < len(l_angles)) & boolean:
+        if l_angles[ind] >= angle:
+            boolean = False
+        else:
+            ind += 1
+    return ind

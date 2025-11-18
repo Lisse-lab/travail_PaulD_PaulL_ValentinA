@@ -87,24 +87,35 @@ class Topo:
 
         a = xmax - xmin
         b = ymax - ymin
-        depths = [[0, self.dic_depths.get(areat, 0)]]
+        depths = []
         substrat = np.array([0.,0.,0.])
-        substrat += self.dic_substrats[areat]
         compt = 0
         
+        pgcd = np.gcd(x2-x1, y2-y1)
+        vx, vy = (x2-x1)/pgcd, (y2-y1)/pgcd
+        for k in range (pgcd+1):
+            area = (areat[0] + k*vx, areat[1] + k*vy)
+            depth = max(self.dic_depths.get(area, 0), 0)
+            ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, area)).astype(int), depth], depths)
+            if area in self.dic_substrats.keys():
+                substrat += self.dic_substrats[area]
+                compt += 1
+        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)+1).astype(int), depth], depths) #only to be sure that the last point is after the reception point
+
+
         for x in np.arange((0.5 + np.floor(xmin+0.5).astype(int)), - 0.5 + np.ceil(xmax+0.5).astype(int)):
             t = (x - xmin) / a
             y = b * t + ymin
             dist = np.round(self.converter.dist_areas(areat, (x,y))).astype(int)
             if y % 1 == 0.5:
-                depth = 1/4 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x+1),int(y)), 0) + self.dic_depths.get((int(x),int(y+1)),0) + self.dic_depths.get((int(x+1),int(y+1)), 0))
+                depth = max(1/4 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x+1),int(y)), 0) + self.dic_depths.get((int(x),int(y+1)),0) + self.dic_depths.get((int(x+1),int(y+1)), 0)), 0)
                 if ut.sort_insert_depth([dist, depth], depths):
                     bool, sub = self.additional_substrat(int(x), int(y), "xy")
                     if bool:
                         substrat += sub
                         compt += 1
             else: 
-                depth = 1/2 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x+1),int(y)), 0))
+                depth = max(1/2 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x+1),int(y)), 0)), 0)
                 if ut.sort_insert_depth([dist, depth], depths):
                     bool, sub = self.additional_substrat(int(x), int(y), "x")
                     if bool:
@@ -121,18 +132,13 @@ class Topo:
             x = a * t + xmin
             dist = np.round(self.converter.dist_areas(areat, (x,y))).astype(int)
             if x % 1 != 0.5:
-                depth = 1/2 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x),int(y+1)), 0))
+                depth = max(1/2 * (self.dic_depths.get((int(x),int(y)), 0) + self.dic_depths.get((int(x),int(y+1)), 0)), 0)
                 if ut.sort_insert_depth([dist, depth], depths):
                     bool, sub = self.additional_substrat(int(x), int(y), "y")
                     if bool:
                         substrat += sub
                         compt += 1
 
-        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)).astype(int), self.dic_depths.get(self.converter.round_area(arear), 0)], depths)
-        ut.sort_insert_depth([np.round(self.converter.dist_areas(areat, arear)+1).astype(int), self.dic_depths.get(self.converter.round_area(arear), 0)], depths) #only to be sure that the last point is after the reception point
-        if self.converter.round_area(arear) in self.dic_substrats.keys():
-            substrat += self.dic_substrats[self.converter.round_area(arear)]
-            compt += 1
         #print(depths)
         return (np.array(depths), substrat/compt)         
     

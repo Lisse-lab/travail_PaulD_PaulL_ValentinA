@@ -33,8 +33,9 @@ class Calculator:
     noise_threshold = 50
     gain = 10
     boat_freqs = [500]
-    l_fcs = [1600]
-    l_freqs_range=[(1300, 1900)]
+    l_boat_freqs_range = [(490, 510)]
+    l_fcs = [4000]
+    l_freqs_range=[(3700, 4300)]
     noises_folder= os.path.join(os.path.dirname(__file__), "../../beluga_watch/noises")
     sample_rate = 384000
     resol_sound_speed=2
@@ -42,13 +43,15 @@ class Calculator:
     one_meter = False
     n_processes = 1 #cpu_count() - 1 if cpu_count()>1 else 1
     height_sensor = 0.85
-    n_calc_ranges = 50
-    angle_calc = np.pi/128
+    n_calc_ranges = 5
+    angle_calc = 2*np.pi/64
     mult_range = 1.25
     range_ultra_max = 50000
-    bool_update_ranges = False
+    snr_min_dB = 0
     sound_velocity_path = os.path.join(os.path.dirname(__file__), "../datas/sound_velocity_new.csv")
     path = os.path.join(os.path.dirname(__file__), "../datas/for_model")
+    noises = None
+    noises_for_nav = None
 
     def __init__(self, converter, new_dics=False, **kwargs):
         for attr, value in kwargs.items():
@@ -61,8 +64,10 @@ class Calculator:
         self.calc_mu = Calc_mu(self.geotiff_path)
 
         self.sample_rate = self.sample_rate
-        self.noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.l_fcs, self.l_freqs_range) #we only use one sec because there are not a lot of differences with more time
-        self.boat_noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.boat_freqs, [(f-10, f+10) for f in self.boat_freqs])
+        if self.noises is None:
+            self.noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.l_fcs, self.l_freqs_range) #we only use one sec because there are not a lot of differences with more time
+        if self.noises_for_nav is None:
+            self.noises_for_nav = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.boat_freqs, self.l_boat_freqs_range)
 
         self.topo = topo.Topo(self.converter, new_dic_depths=new_dics, new_dic_substrats=new_dics)
         self.create_df_areas(new = new_dics)
@@ -72,10 +77,10 @@ class Calculator:
         else:
             self.env = Environment(os.path.join(os.path.dirname(__file__), "../environments/basic_env.json"), use_h4=True)
         cls_points.Point.set_topo(self.topo, self.height_sensor)
-        max_range = self.get_max_range()
-        cls_points.NPoint.set_range(max_range)
-        max_range *= self.mult_range
-        self.dic_to_calc, self.mat_which_value = ut.get_to_calculate(self.angle_calc, 1 + np.ceil(max_range / self.converter.width_area).astype(int))
+        self.max_range, mean_max_range = self.get_max_range()
+        cls_points.NPoint.set_range(mean_max_range)
+        self.max_range *= self.mult_range
+        self.dic_to_calc, self.mat_which_value = ut.get_to_calculate(self.angle_calc, 1 + np.ceil(self.max_range / self.converter.width_area).astype(int))
 
     def get_params_alpha(self):
         a1 = 8.86 * (10 **(0.78*self.ph - 5)) / 1000 #A1*cw/1000
@@ -119,9 +124,9 @@ class Calculator:
         else:
             self.init_worker()
             results = [self.calc_tdoa_errors(arg) for arg in args]
-        if self.bool_update_ranges:
-            self.update_ranges(results)
-        for colonne1, serie1, colonne2, serie2, _, _ in results:
+        # if self.bool_update_ranges:
+        #     self.update_ranges(results)
+        for colonne1, serie1, colonne2, serie2 in results:
             self.df_areas[colonne1] = serie1
             self.df_areas[colonne2] = serie2
         for freq in self.l_fcs:
@@ -221,7 +226,7 @@ class Calculator:
                 for ij, n in dic_to_calc.items():
                     i, j = ij[0], ij[1]
                     if i == 0:
-                        s_tloss[((df_areas["x"] == areat[0]) & (df_areas["y"] == areat[1]))] = self.source_level_beluga - self.boat_noises[freq]
+                        s_tloss[((df_areas["x"] == areat[0]) & (df_areas["y"] == areat[1]))] = self.source_level_beluga - self.noises_for_nav[freq]
                         dic_to_calc_range[0] = True
                     dist = np.ceil(ut.norme(i, j)).astype(int)
                     if dic_to_calc_range.get(dist - 1, False):
@@ -287,8 +292,8 @@ class Calculator:
                             df_areas.at[n, "w"] = 1
                             df_areas.at[n, "weight_density"] = self.weight_density(i, j, k) #les points sont en coordoonées d'area et non en coordonnées angulaire
                             n += 1
-            self.calc_nav_weight(df_areas)
-            df_areas["w"] = df_areas["weight_density"] * df_areas["nav_weight"]
+            #self.calc_nav_weight(df_areas)
+            df_areas["w"] = df_areas["weight_density"]# * df_areas["nav_weight"]
             print("df_areas created")
             df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
         self.df_areas = df_areas
@@ -329,7 +334,7 @@ class Calculator:
             env_acc["soundspeed"] = self.sound_speeds[:i_soundspeed, 1].mean()
             tloss = pm.compute_transmission_loss(env_acc, mode='semicoherent')
         sound_speed = (self.sound_speeds[i_soundspeed+1][1] -  self.sound_speeds[i_soundspeed+1][1]) / self.resol * (depthsb.max() - self.resol*i_soundspeed) + self.sound_speeds[i_soundspeed+1][1]
-        return -20 * ut.log10(np.abs(tloss)) + self.alpha(freq, depthsb.max(), sound_speed) * depths[-2][0]
+        return -20 * ut.log10(np.abs(tloss)) + self.alpha(freq, depthsb.max(), sound_speed) * np.linspace(0 , int(depths[-2][0]), n_areas + 1)[1:]
     
 ###Error :
     def calc_meter_errors(self, row, freq):
@@ -347,13 +352,35 @@ class Calculator:
         crb_matrix = pos_crb_matrix(pos, w, truth_mask, self.env)
         return np.sqrt(np.sum(np.diag(crb_matrix)))
     
+    
     def calc_tdoa_errors(self, args):
         point, freq, freq_range, k = args
+        l_angles = [-np.round(np.pi/2, 8), 0, np.round(np.pi/2, 8), np.round(np.pi,8)]
+        dic_angles_range = {angle : self.max_range for angle in l_angles}
         s_snr_dB = pd.Series(index=self.df_areas.index, dtype=float)
         s_tdoa_errors = pd.Series(index=self.df_areas.index, dtype=float)
         s_use_crb = pd.Series(index=self.df_areas.index, dtype=bool)
         area = self.converter.utm2area(point.coords[0], point.coords[1])
         dic_to_calc_range = {}
+
+        def calc_tdoa_error_single_area(u, v, n2):
+            depths, substrat = self.topo.depths_and_substrat(area, (area[0] + u*n2, area[1] + v*n2))
+            depthsb = self.converter.create_depthsb(depths[:,1].max())
+            if len(depthsb) > 0:
+                snr_dB = self.calc_snr_dB(point.depth(), depthsb, n, freq, depths, substrat)
+                for m, col in enumerate(snr_dB.columns):
+                    x, y = area[0] + u*(m+1), area[1] + v*(m+1)
+                    mask = ((self.df_areas["x"] == x) & (self.df_areas["y"] == y))
+                    if mask.sum() >0:
+                        s_snr_dB[mask] = snr_dB[col].iloc[:mask.sum()].values
+                        results = s_snr_dB[mask].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
+                        s_tdoa_errors[mask], s_use_crb[mask] = [r[0] for r in results], [r[1] for r in results]
+                        if not (s_use_crb[mask]).any():
+                            break
+                return snr_dB.columns[m], (m == len(snr_dB.columns) - 1)
+            else :
+                return 0, True
+            
         for ij, n in self.dic_to_calc.items():
             i, j = ij[0], ij[1]
             if i == 0:
@@ -362,52 +389,64 @@ class Calculator:
                 results = s_snr_dB[mask].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
                 s_tdoa_errors[mask], s_use_crb[mask] = [r[0] for r in results], [r[1] for r in results]
                 dic_to_calc_range[0] = True
-            dist = np.ceil(ut.norme(i, j)).astype(int)
-            if dic_to_calc_range.get(dist - 1, False):
-                l = ut.comb(n*i, n*j, area)
-                for u,v in l:
-                    depths, substrat = self.topo.depths_and_substrat(area, (u,v))
-                    depthsb = self.converter.create_depthsb(depths[:,1].max())
-                    if len(depthsb) > 0:
-                        snr_dB = self.calc_snr_dB(point.depth(), depthsb, n, freq, depths, substrat)
-                        for m, col in enumerate(snr_dB.columns):
-                            x, y = area[0] + i*(m+1), area[1] + j*(m+1)
-                            mask = ((self.df_areas["x"] == x) & (self.df_areas["y"] == y))
-                            s_snr_dB[mask] = snr_dB[col].iloc[:mask.sum()]
-                            results = s_snr_dB[mask].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
-                            s_tdoa_errors[mask], s_use_crb[mask] = [r[0] for r in results], [r[1] for r in results]
-                            dist2 = np.ceil((m+1)*ut.norme(i,j)).astype(int)
-                            dic_to_calc_range[dist2] = dic_to_calc_range.get(dist2, False) | (s_use_crb[mask]).any()
+            else:
+                l = ut.comb(i, j, (0, 0))
+                norme = np.ceil(ut.norme(i, j)).astype(int)
+                for u, v in l:        
+                    theta = np.round(np.arctan2(v, u), 8)
+                    ind = ut.find_indice_angles(theta, l_angles)
+                    max_range = max(dic_angles_range[l_angles[ind]], dic_angles_range[l_angles[ind-1]])
+                    n2 = min(n, int(max_range/norme/self.converter.width_area))
+                    if n2 > 0:
+                        range_max_reached = True
+                        while range_max_reached:
+                            range_max, range_max_reached = calc_tdoa_error_single_area(u, v, n2)
+                            n2 *= 2
+                        dic_angles_range[theta] = range_max * self.mult_range
+                        l_angles.insert(ind, theta)
+
+
         for i in range(self.mat_which_value.shape[0]):
             for j in range(self.mat_which_value.shape[1]):
-                if self.mat_which_value[i,j] is not None and len(self.mat_which_value[i,j]) > 2:
+                if self.mat_which_value[i,j] is not None and len(self.mat_which_value[i,j]) >= 2:
                     for uv0, uv1, uv2 in zip(ut.comb(i,j,area), ut.comb(self.mat_which_value[i,j][0][0],self.mat_which_value[i,j][0][1],area), ut.comb(self.mat_which_value[i,j][1][0],self.mat_which_value[i,j][1][1],area)):
                         mask0 = ((self.df_areas["x"] == uv0[0]) & (self.df_areas["y"] == uv0[1]))
                         mask1 = ((self.df_areas["x"] == uv1[0]) & (self.df_areas["y"] == uv1[1]))
                         mask2 = ((self.df_areas["x"] == uv2[0]) & (self.df_areas["y"] == uv2[1]))
-                        n0 = len(self.df_areas[mask0])
-                        for d in range (n0):
-                            if len(s_snr_dB[mask1 & (self.df_areas["d"] == d)]) > 0 & len(s_snr_dB[mask2 & (self.df_areas["d"] == d)]) > 0:
-                                s_snr_dB[mask0 & (self.df_areas["d"] == d)] = (s_snr_dB[mask1 & (s_snr_dB["d"] == d)] + s_snr_dB[mask2 & (self.df_areas["d"] == d)])/2
-                            elif len(s_snr_dB[mask1 & (self.df_areas["d"] == d)]) == 0 & len(s_snr_dB[mask2 & (self.df_areas["d"] == d)]) > 0:
-                                s_snr_dB[mask0 & (self.df_areas["d"] == d)] =  s_snr_dB[mask2 & (self.df_areas["d"] == d)]
-                            elif len(s_snr_dB[mask1 & (self.df_areas["d"] == d)]) > 0 & len(s_snr_dB[mask2 & (self.df_areas["d"] == d)]) == 0:
-                                s_snr_dB[mask0 & (self.df_areas["d"] == d)] =  s_snr_dB[mask1 & (self.df_areas["d"] == d)]
+                        indexes = s_snr_dB[mask0].index
+                        if (mask0.sum() <= mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                            s_snr_dB.loc[indexes] = (s_snr_dB[mask1].iloc[:mask0.sum()].values + s_snr_dB[mask2].iloc[:mask0.sum()].values)/2
+                        elif (mask0.sum() > mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                            s_snr_dB.loc[indexes[:mask1.sum()]] = (s_snr_dB[mask1].values + s_snr_dB[mask2].iloc[:mask1.sum()].values) /2
+                            s_snr_dB.loc[indexes[mask1.sum():]] = s_snr_dB[mask2].iloc[mask1.sum():mask0.sum()].values
+                        elif (mask0.sum() <= mask1.sum()) & (mask0.sum() > mask2.sum()):
+                            s_snr_dB.loc[indexes[:mask2.sum()]] = (s_snr_dB[mask1].iloc[:mask2.sum()].values + s_snr_dB[mask2].values) /2
+                            s_snr_dB.loc[indexes[mask2.sum():]] = s_snr_dB[mask1].iloc[mask2.sum():mask0.sum()].values
+                        else :
+                            if mask1.sum()<= mask2.sum():
+                                s_snr_dB.loc[indexes[:mask1.sum()]] = (s_snr_dB[mask1].values + s_snr_dB[mask2].iloc[:mask1.sum()].values) /2
+                                s_snr_dB.loc[indexes[mask1.sum():mask2.sum()]] = s_snr_dB[mask2].iloc[mask1.sum():].values
+                                s_snr_dB.loc[indexes[mask2.sum():]] = s_snr_dB[mask0].iloc[mask2.sum()]
                             else:
-                                s_snr_dB[mask0 & (self.df_areas["d"] == d)] = s_snr_dB[mask0 & (self.df_areas["d"] == d-1)] if d > 0 else None
+                                s_snr_dB.loc[indexes[:mask2.sum()]] = (s_snr_dB[mask1].iloc[:mask2.sum()].values + s_snr_dB[mask2].values) /2
+                                s_snr_dB.loc[indexes[mask2.sum():mask1.sum()]] = s_snr_dB[mask1].iloc[mask2.sum():].values
+                                s_snr_dB.loc[indexes[mask1.sum():]] = s_snr_dB[mask0].iloc[mask1.sum()]
                         results = s_snr_dB[mask0].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
                         s_tdoa_errors[mask0], s_use_crb[mask0] = [r[0] for r in results], [r[1] for r in results]
         return str(k) + "_tdoa_error" + str(freq), s_tdoa_errors, str(k) + "_use_crb" + str(freq), s_use_crb
 
     def calc_tdoa_errors_hydro(self, snr_dB, k, freq, freq_range):
-        snr_power = 10**(snr_dB/10)
-        #We can make the calcul on the 6 pairs of hydrophones but because it has the same SNR the tdoa error will be the same
-        hydrophoneref = Hydrophone(0, None, (self.env.tetrahedras[str(k)].relative_hydro_coords + self.env.tetrahedras[str(k)].origin_enu)[0], snr_power)
-        hydrophonedelta = Hydrophone(1, None, (self.env.tetrahedras[str(k)].relative_hydro_coords + self.env.tetrahedras[str(k)].origin_enu)[1], snr_power)
-        hydrophonepair = HydrophonePair(hydrophoneref, hydrophonedelta, int(next(iter(self.env.tetrahedras.values())).max_delay_seconds*384000))
-        metadata = AudioMetadata('', "Whistle", 1, 0, None, self.sample_rate, freq_range, freq)
-        error, use_crb = crb_from_pair(metadata, 1, hydrophonepair, freq_range[1]-freq_range[0])
-        return error, use_crb
+        if snr_dB >= self.snr_min_dB:
+            snr_power = 10**(snr_dB/10)
+            #We can make the calcul on the 6 pairs of hydrophones but because it has the same SNR the tdoa error will be the same
+            hydrophoneref = Hydrophone(0, None, (self.env.tetrahedras[str(k)].relative_hydro_coords + self.env.tetrahedras[str(k)].origin_enu)[0], snr_power)
+            hydrophonedelta = Hydrophone(1, None, (self.env.tetrahedras[str(k)].relative_hydro_coords + self.env.tetrahedras[str(k)].origin_enu)[1], snr_power)
+            hydrophonepair = HydrophonePair(hydrophoneref, hydrophonedelta, int(next(iter(self.env.tetrahedras.values())).max_delay_seconds*384000))
+            metadata = AudioMetadata('', "Whistle", 1, 0, None, self.sample_rate, freq_range, freq)
+            error, use_crb = crb_from_pair(metadata, 1, hydrophonepair, freq_range[1]-freq_range[0])
+            return error, use_crb
+        else:
+            return float("nan"), False
     
     def get_max_range(self, new = False):
         if (not new) & ("df_ranges.csv" in os.listdir(self.path)):
@@ -442,7 +481,7 @@ class Calculator:
             print("df_ranges created/modified")
         for freq, freq_range in zip(self.l_fcs, self.l_freqs_range):
             mask = (abs(df_ranges["source_level_beluga"] - self.source_level_beluga) < 0.5) & (df_ranges["freq"] == freq) & (df_ranges["freq_range_min"] == freq_range[0]) & (df_ranges["freq_range_max"] == freq_range[1]) & (abs(df_ranges["noise"] - self.noises[freq])<0.5)
-        return df_ranges.loc[mask, "range_max"].max()
+        return df_ranges.loc[mask, "range_max"].max(), df_ranges.loc[mask, "range_mean"].max()
     
     def get_range(self, arg):
         freq, freq_range, k, point = arg
@@ -457,7 +496,8 @@ class Calculator:
                 snr_dB = self.calc_snr_dB(point.depth(), depthsb, n, freq, depths, substrat)
                 col_max = snr_dB.columns[0]
                 for col in snr_dB.columns:
-                    if snr_dB.apply(lambda row : self.calc_tdoa_errors_hydro(row[col], k, freq, freq_range)[1], axis=1).any():
+#                    if snr_dB.apply(lambda row : self.calc_tdoa_errors_hydro(row[col], k, freq, freq_range)[1], axis=1).any():
+                    if snr_dB.apply(lambda row : row[col] >= self.snr_min_dB, axis=1).any():
                         col_max = col
                 l_ranges.append(col_max)
         return freq, np.max(l_ranges)
