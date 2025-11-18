@@ -41,7 +41,7 @@ class Calculator:
     resol_sound_speed=2
     geotiff_path = os.path.join(os.path.dirname(__file__), "../datas/BelugaRelativeDens/BelugaRelativeDens.tif")
     one_meter = False
-    n_processes = 1 #cpu_count() - 1 if cpu_count()>1 else 1
+    n_processes = cpu_count() - 1 if cpu_count()>1 else 1
     height_sensor = 0.85
     n_calc_ranges = 5
     angle_calc = 2*np.pi/64
