@@ -194,7 +194,7 @@ class Calculator:
                 self.converter.area2utm((row.x - 0.5, row.y + 0.5))
             ])
             if polygon.intersects(linestring):
-                l_nav.append((row.x, row.y))
+                l_nav.append((int(row.x), int(row.y)))
         return None
 
     def calc_nav_weight(self, df_areas):
@@ -204,62 +204,76 @@ class Calculator:
         _ = df_areas.apply(lambda row: self.zone_intersects_line(row, gdf.loc[0, "geometry"], l_nav), axis=1)
         _ = df_areas.apply(lambda row: self.zone_intersects_line(row, gdf.loc[1, "geometry"], l_nav), axis=1)
         df_areas["nav_exp"] = 0
+        n_areas = int(self.range_ultra_max / self.converter.width_area)
+        dic_to_calc, mat_which_value = ut.get_to_calculate(self.angle_calc, 1 + n_areas)
         for areat in l_nav:
             for freq in self.boat_freqs:
-                n_areas = int(self.range_ultra_max / self.converter.width_area)
-            #     l = ut.comb(n,0,areat) + ut.comb(n,n, areat)
-            #     l_col_max = []
-            #     for u, v in l:
-            #         depths, substrat = self.topo.depths_and_substrat(areat, (u,v))
-            #         depthsb = self.converter.create_depthsb(depths[:,1].max())
-            #         tlosses = self.tloss(0, depthsb, n, freq, depths, substrat)
-            #         col_max = tlosses.columns[0]
-            #         for col in tlosses.columns:
-            #             if tlosses.apply(lambda row : excess_noise - row[col] > 0).any():
-            #                 col_max = col
-            #         l_col_max.append(col_max)
-            #     n_areas = np.ceil(np.max(l_col_max) * self.mult_range / self.converter.width_area).astype(int)
-            #     print("Range max for navigatio is : ", np.max(l_col_max))
-                dic_to_calc, mat_which_value = ut.get_to_calculate(self.angle_calc, 1 + n_areas)
-                s_tloss = pd.Series(index=df_areas.index, dtype=float)
-                dic_to_calc_range = {}
+                s_tloss = pd.Series(0, index=df_areas.index, dtype=float)
+                l_angles = [-np.round(np.pi/2, 8), 0, np.round(np.pi/2, 8), np.round(np.pi,8)]
+                dic_angles_range = {angle : self.range_ultra_max for angle in l_angles}
+                
+                def calc_nav_weight_single_area(u, v, n2):
+                    depths, substrat = self.topo.depths_and_substrat(areat, (areat[0] + u*n2, areat[1] + v*n2))
+                    depthsb = self.converter.create_depthsb(depths[:,1].max())
+                    if len(depthsb) > 0:
+                        tlosses = self.tloss(0, depthsb, n, freq, depths, substrat)
+                        for m, col in enumerate(tlosses.columns):
+                            x, y = areat[0] + u*(m+1), areat[1] + v*(m+1)
+                            mask = ((df_areas["x"] == x) & (df_areas["y"] == y))
+                            if mask.sum() >0:
+                                s_tloss[mask] = tlosses[col].iloc[:mask.sum()].apply(lambda val : max(val, 0))
+                                if (s_tloss[mask] == 0).all():
+                                    break
+                        return tlosses.columns[m], (m == len(tlosses.columns) - 1)
+                    else :
+                        return 0, True
+                    
                 for ij, n in dic_to_calc.items():
                     i, j = ij[0], ij[1]
                     if i == 0:
                         s_tloss[((df_areas["x"] == areat[0]) & (df_areas["y"] == areat[1]))] = self.source_level_beluga - self.noises_for_nav[freq]
-                        dic_to_calc_range[0] = True
-                    dist = np.ceil(ut.norme(i, j)).astype(int)
-                    if dic_to_calc_range.get(dist - 1, False):
-                        l = ut.comb(n*i, n*j, areat)
-                        for u,v in l:
-                            depths, substrat = self.topo.depths_and_substrat(areat, (u,v))
-                            depthsb = self.converter.create_depthsb(depths[:,1].max())
-                            if len(depthsb) > 0:
-                                tlosses = self.tloss(0, depthsb, n, freq, depths, substrat)
-                                for m, col in enumerate(tlosses.columns):
-                                    x, y = areat[0] + i*(m+1), areat[1] + j*(m+1)
-                                    mask = ((df_areas["x"] == x) & (df_areas["y"] == y))
-                                    s_tloss[mask] = tlosses[col].iloc[:mask.sum()].apply(lambda val : max(val, 0))
-                                    dist2 = np.ceil((m+1)*ut.norme(i,j)).astype(int)
-                                    dic_to_calc_range[dist2] = dic_to_calc_range.get(dist2, False) | (s_tloss[mask] > 0).any()
+                    else:
+                        l = ut.comb(i, j, (0, 0))
+                        norme = np.ceil(ut.norme(i, j)).astype(int)
+                        for u, v in l:        
+                            theta = np.round(np.arctan2(v, u), 8)
+                            ind = ut.find_indice_angles(theta, l_angles)
+                            max_range = max(dic_angles_range[l_angles[ind]], dic_angles_range[l_angles[ind-1]])
+                            n2 = min(n, int(max_range/norme/self.converter.width_area))
+                            if n2 > 0:
+                                range_max_reached = True
+                                while range_max_reached:
+                                    range_max, range_max_reached = calc_nav_weight_single_area(u, v, n2)
+                                    n2 *= 2
+                                dic_angles_range[theta] = range_max * self.mult_range
+                                l_angles.insert(ind, theta)
 
                 for i in range(mat_which_value.shape[0]):
                     for j in range(mat_which_value.shape[1]):
                         if mat_which_value[i,j] is not None and len(mat_which_value[i,j]) > 2:
                             for uv0, uv1, uv2 in zip(ut.comb(i,j,areat), ut.comb(mat_which_value[i,j][0][0], mat_which_value[i,j][0][1],areat), ut.comb(mat_which_value[i,j][1][0],mat_which_value[i,j][1][1],areat)):
-                                mask0 = ((s_tloss["x"] == uv0[0]) & (s_tloss["y"] == uv0[1]))
-                                mask1 = ((s_tloss["x"] == uv1[0]) & (s_tloss["y"] == uv1[1]))
-                                mask2 = ((s_tloss["x"] == uv2[0]) & (s_tloss["y"] == uv2[1]))
-                                n0 = len(s_tloss[mask0])
-                                for d in range (n0):
-                                    if len(s_tloss[mask1 & (s_tloss["d"] == d)]) > 0 & len(s_tloss[mask2 & (s_tloss["d"] == d)]) > 0:
-                                        s_tloss[mask0 & (s_tloss["d"] == d)] = (s_tloss[mask1 & (s_tloss["d"] == d)] + s_tloss[mask2 & (s_tloss["d"] == d)])/2
-                                    elif len(s_tloss[mask1 & (s_tloss["d"] == d)]) == 0 & len(s_tloss[mask2 & (s_tloss["d"] == d)]) > 0:
-                                        s_tloss[mask0 & (s_tloss["d"] == d)] =  s_tloss[mask2 & (s_tloss["d"] == d)]
-                                    elif len(s_tloss[mask1 & (s_tloss["d"] == d)]) > 0 & len(s_tloss[mask2 & (s_tloss["d"] == d)]) == 0:
-                                        s_tloss[mask0 & (s_tloss["d"] == d)] =  s_tloss[mask1 & (s_tloss["d"] == d)]
-                                    else:
-                                        s_tloss[mask0 & (s_tloss["d"] == d)] = s_tloss[mask0 & (s_tloss["d"] == d-1)] if d > 0 else None
+                                mask0 = ((df_areas["x"] == uv0[0]) & (df_areas["y"] == uv0[1]))
+                                mask1 = ((df_areas["x"] == uv1[0]) & (df_areas["y"] == uv1[1]))
+                                mask2 = ((df_areas["x"] == uv2[0]) & (df_areas["y"] == uv2[1]))
+                                if mask0.sum() > 0:
+                                        indexes = s_tloss[mask0].index
+                                        if (mask0.sum() <= mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                                            s_tloss.loc[indexes] = (s_tloss[mask1].iloc[:mask0.sum()].values + s_tloss[mask2].iloc[:mask0.sum()].values)/2
+                                        elif (mask0.sum() > mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                                            s_tloss.loc[indexes[:mask1.sum()]] = (s_tloss[mask1].values + s_tloss[mask2].iloc[:mask1.sum()].values) /2
+                                            s_tloss.loc[indexes[mask1.sum():]] = s_tloss[mask2].iloc[mask1.sum():mask0.sum()].values
+                                        elif (mask0.sum() <= mask1.sum()) & (mask0.sum() > mask2.sum()):
+                                            s_tloss.loc[indexes[:mask2.sum()]] = (s_tloss[mask1].iloc[:mask2.sum()].values + s_tloss[mask2].values) /2
+                                            s_tloss.loc[indexes[mask2.sum():]] = s_tloss[mask1].iloc[mask2.sum():mask0.sum()].values
+                                        else :
+                                            if mask1.sum()<= mask2.sum():
+                                                s_tloss.loc[indexes[:mask1.sum()]] = (s_tloss[mask1].values + s_tloss[mask2].iloc[:mask1.sum()].values) /2
+                                                s_tloss.loc[indexes[mask1.sum():mask2.sum()]] = s_tloss[mask2].iloc[mask1.sum():].values
+                                                s_tloss.loc[indexes[mask2.sum():]] = s_tloss[mask0].iloc[mask2.sum()]
+                                            else:
+                                                s_tloss.loc[indexes[:mask2.sum()]] = (s_tloss[mask1].iloc[:mask2.sum()].values + s_tloss[mask2].values) /2
+                                                s_tloss.loc[indexes[mask2.sum():mask1.sum()]] = s_tloss[mask1].iloc[mask2.sum():].values
+                                                s_tloss.loc[indexes[mask1.sum():]] = s_tloss[mask0].iloc[mask1.sum()]
                 df_areas["nav_exp"] += s_tloss/len(self.boat_freqs)
         df_areas["nav_weight"] = 1 + (self.gain - 1) / excess_noise * df_areas["nav_exp"] / len(l_nav)
         df_areas.drop(columns ="nav_exp", inplace=True)
@@ -361,7 +375,6 @@ class Calculator:
         s_tdoa_errors = pd.Series(index=self.df_areas.index, dtype=float)
         s_use_crb = pd.Series(index=self.df_areas.index, dtype=bool)
         area = self.converter.utm2area(point.coords[0], point.coords[1])
-        dic_to_calc_range = {}
 
         def calc_tdoa_error_single_area(u, v, n2):
             depths, substrat = self.topo.depths_and_substrat(area, (area[0] + u*n2, area[1] + v*n2))
@@ -388,7 +401,6 @@ class Calculator:
                 s_snr_dB[mask] = self.source_level_beluga - self.noises[freq]
                 results = s_snr_dB[mask].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
                 s_tdoa_errors[mask], s_use_crb[mask] = [r[0] for r in results], [r[1] for r in results]
-                dic_to_calc_range[0] = True
             else:
                 l = ut.comb(i, j, (0, 0))
                 norme = np.ceil(ut.norme(i, j)).astype(int)
@@ -414,25 +426,26 @@ class Calculator:
                         mask1 = ((self.df_areas["x"] == uv1[0]) & (self.df_areas["y"] == uv1[1]))
                         mask2 = ((self.df_areas["x"] == uv2[0]) & (self.df_areas["y"] == uv2[1]))
                         indexes = s_snr_dB[mask0].index
-                        if (mask0.sum() <= mask1.sum()) & (mask0.sum() <= mask2.sum()):
-                            s_snr_dB.loc[indexes] = (s_snr_dB[mask1].iloc[:mask0.sum()].values + s_snr_dB[mask2].iloc[:mask0.sum()].values)/2
-                        elif (mask0.sum() > mask1.sum()) & (mask0.sum() <= mask2.sum()):
-                            s_snr_dB.loc[indexes[:mask1.sum()]] = (s_snr_dB[mask1].values + s_snr_dB[mask2].iloc[:mask1.sum()].values) /2
-                            s_snr_dB.loc[indexes[mask1.sum():]] = s_snr_dB[mask2].iloc[mask1.sum():mask0.sum()].values
-                        elif (mask0.sum() <= mask1.sum()) & (mask0.sum() > mask2.sum()):
-                            s_snr_dB.loc[indexes[:mask2.sum()]] = (s_snr_dB[mask1].iloc[:mask2.sum()].values + s_snr_dB[mask2].values) /2
-                            s_snr_dB.loc[indexes[mask2.sum():]] = s_snr_dB[mask1].iloc[mask2.sum():mask0.sum()].values
-                        else :
-                            if mask1.sum()<= mask2.sum():
+                        if mask0.sum() > 0:
+                            if (mask0.sum() <= mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                                s_snr_dB.loc[indexes] = (s_snr_dB[mask1].iloc[:mask0.sum()].values + s_snr_dB[mask2].iloc[:mask0.sum()].values)/2
+                            elif (mask0.sum() > mask1.sum()) & (mask0.sum() <= mask2.sum()):
                                 s_snr_dB.loc[indexes[:mask1.sum()]] = (s_snr_dB[mask1].values + s_snr_dB[mask2].iloc[:mask1.sum()].values) /2
-                                s_snr_dB.loc[indexes[mask1.sum():mask2.sum()]] = s_snr_dB[mask2].iloc[mask1.sum():].values
-                                s_snr_dB.loc[indexes[mask2.sum():]] = s_snr_dB[mask0].iloc[mask2.sum()]
-                            else:
+                                s_snr_dB.loc[indexes[mask1.sum():]] = s_snr_dB[mask2].iloc[mask1.sum():mask0.sum()].values
+                            elif (mask0.sum() <= mask1.sum()) & (mask0.sum() > mask2.sum()):
                                 s_snr_dB.loc[indexes[:mask2.sum()]] = (s_snr_dB[mask1].iloc[:mask2.sum()].values + s_snr_dB[mask2].values) /2
-                                s_snr_dB.loc[indexes[mask2.sum():mask1.sum()]] = s_snr_dB[mask1].iloc[mask2.sum():].values
-                                s_snr_dB.loc[indexes[mask1.sum():]] = s_snr_dB[mask0].iloc[mask1.sum()]
-                        results = s_snr_dB[mask0].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
-                        s_tdoa_errors[mask0], s_use_crb[mask0] = [r[0] for r in results], [r[1] for r in results]
+                                s_snr_dB.loc[indexes[mask2.sum():]] = s_snr_dB[mask1].iloc[mask2.sum():mask0.sum()].values
+                            else :
+                                if mask1.sum()<= mask2.sum():
+                                    s_snr_dB.loc[indexes[:mask1.sum()]] = (s_snr_dB[mask1].values + s_snr_dB[mask2].iloc[:mask1.sum()].values) /2
+                                    s_snr_dB.loc[indexes[mask1.sum():mask2.sum()]] = s_snr_dB[mask2].iloc[mask1.sum():].values
+                                    s_snr_dB.loc[indexes[mask2.sum():]] = s_snr_dB[mask0].iloc[mask2.sum()]
+                                else:
+                                    s_snr_dB.loc[indexes[:mask2.sum()]] = (s_snr_dB[mask1].iloc[:mask2.sum()].values + s_snr_dB[mask2].values) /2
+                                    s_snr_dB.loc[indexes[mask2.sum():mask1.sum()]] = s_snr_dB[mask1].iloc[mask2.sum():].values
+                                    s_snr_dB.loc[indexes[mask1.sum():]] = s_snr_dB[mask0].iloc[mask1.sum()]
+                            results = s_snr_dB[mask0].apply(lambda row : self.calc_tdoa_errors_hydro(row, k, freq, freq_range))
+                            s_tdoa_errors[mask0], s_use_crb[mask0] = [r[0] for r in results], [r[1] for r in results]
         return str(k) + "_tdoa_error" + str(freq), s_tdoa_errors, str(k) + "_use_crb" + str(freq), s_use_crb
 
     def calc_tdoa_errors_hydro(self, snr_dB, k, freq, freq_range):
