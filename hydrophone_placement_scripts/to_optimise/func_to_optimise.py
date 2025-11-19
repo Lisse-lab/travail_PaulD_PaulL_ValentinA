@@ -217,7 +217,7 @@ class Calculator:
                             break
                 return tlosses.columns[m], (m == len(tlosses.columns) - 1)
             else :
-                return 0, True
+                return 0, False
             
         for ij, n in dic_to_calc.items():
             i, j = ij[0], ij[1]
@@ -400,7 +400,7 @@ class Calculator:
                             break
                 return snr_dB.columns[m], (m == len(snr_dB.columns) - 1)
             else :
-                return 0, True
+                return 0, False
             
         for ij, n in self.dic_to_calc.items():
             i, j = ij[0], ij[1]
