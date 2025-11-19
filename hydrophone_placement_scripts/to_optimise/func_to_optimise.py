@@ -43,7 +43,7 @@ class Calculator:
     one_meter = False
     n_processes = cpu_count() - 1 if cpu_count()>1 else 1
     height_sensor = 0.85
-    n_calc_ranges = 5
+    n_calc_ranges = 30
     angle_calc = 2*np.pi/64
     mult_range = 1.25
     range_ultra_max = 50000
@@ -197,92 +197,101 @@ class Calculator:
                 l_nav.append((int(row.x), int(row.y)))
         return None
 
-    def calc_nav_weight(self, df_areas):
+    def calc_nav_weight_multi_pros(self, args):
+        areat, freq, dic_to_calc, mat_which_value = args
+        s_tloss = pd.Series(0, index=self.df_areas.index, dtype=float)
+        l_angles = [-np.round(np.pi/2, 8), 0, np.round(np.pi/2, 8), np.round(np.pi,8)]
+        dic_angles_range = {angle : self.range_ultra_max for angle in l_angles}
+        
+        def calc_nav_weight_single_area(u, v, n2):
+            depths, substrat = self.topo.depths_and_substrat(areat, (areat[0] + u*n2, areat[1] + v*n2))
+            depthsb = self.converter.create_depthsb(depths[:,1].max())
+            if len(depthsb) > 0:
+                tlosses = self.tloss(0, depthsb, n2, freq, depths, substrat)
+                for m, col in enumerate(tlosses.columns):
+                    x, y = areat[0] + u*(m+1), areat[1] + v*(m+1)
+                    mask = ((self.df_areas["x"] == x) & (self.df_areas["y"] == y))
+                    if mask.sum() > 0:
+                        s_tloss[mask] = tlosses[col].iloc[:mask.sum()].apply(lambda val : max(val, 0))
+                        if (s_tloss[mask] == 0).all():
+                            break
+                return tlosses.columns[m], (m == len(tlosses.columns) - 1)
+            else :
+                return 0, True
+            
+        for ij, n in dic_to_calc.items():
+            i, j = ij[0], ij[1]
+            if i == 0:
+                s_tloss[((self.df_areas["x"] == areat[0]) & (self.df_areas["y"] == areat[1]))] = self.source_level_beluga - self.noises_for_nav[freq]
+            else:
+                l = ut.comb(i, j, (0, 0))
+                norme = np.ceil(ut.norme(i, j)).astype(int)
+                for u, v in l:        
+                    theta = np.round(np.arctan2(v, u), 8)
+                    ind = ut.find_indice_angles(theta, l_angles)
+                    max_range = max(dic_angles_range[l_angles[ind]], dic_angles_range[l_angles[ind-1]])
+                    n2 = min(n, int(max_range/norme/self.converter.width_area))
+                    if n2 > 0:
+                        range_max_reached = True
+                        while range_max_reached:
+                            range_max, range_max_reached = calc_nav_weight_single_area(u, v, n2)
+                            n2 *= 2
+                        dic_angles_range[theta] = range_max * self.mult_range
+                        l_angles.insert(ind, theta)
+
+        for i in range(mat_which_value.shape[0]):
+            for j in range(mat_which_value.shape[1]):
+                if mat_which_value[i,j] is not None and len(mat_which_value[i,j]) > 2:
+                    for uv0, uv1, uv2 in zip(ut.comb(i,j,areat), ut.comb(mat_which_value[i,j][0][0], mat_which_value[i,j][0][1],areat), ut.comb(mat_which_value[i,j][1][0],mat_which_value[i,j][1][1],areat)):
+                        mask0 = ((self.df_areas["x"] == uv0[0]) & (self.df_areas["y"] == uv0[1]))
+                        mask1 = ((self.df_areas["x"] == uv1[0]) & (self.df_areas["y"] == uv1[1]))
+                        mask2 = ((self.df_areas["x"] == uv2[0]) & (self.df_areas["y"] == uv2[1]))
+                        if mask0.sum() > 0:
+                                indexes = s_tloss[mask0].index
+                                if (mask0.sum() <= mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                                    s_tloss.loc[indexes] = (s_tloss[mask1].iloc[:mask0.sum()].values + s_tloss[mask2].iloc[:mask0.sum()].values)/2
+                                elif (mask0.sum() > mask1.sum()) & (mask0.sum() <= mask2.sum()):
+                                    s_tloss.loc[indexes[:mask1.sum()]] = (s_tloss[mask1].values + s_tloss[mask2].iloc[:mask1.sum()].values) /2
+                                    s_tloss.loc[indexes[mask1.sum():]] = s_tloss[mask2].iloc[mask1.sum():mask0.sum()].values
+                                elif (mask0.sum() <= mask1.sum()) & (mask0.sum() > mask2.sum()):
+                                    s_tloss.loc[indexes[:mask2.sum()]] = (s_tloss[mask1].iloc[:mask2.sum()].values + s_tloss[mask2].values) /2
+                                    s_tloss.loc[indexes[mask2.sum():]] = s_tloss[mask1].iloc[mask2.sum():mask0.sum()].values
+                                else :
+                                    if mask1.sum()<= mask2.sum():
+                                        s_tloss.loc[indexes[:mask1.sum()]] = (s_tloss[mask1].values + s_tloss[mask2].iloc[:mask1.sum()].values) /2
+                                        s_tloss.loc[indexes[mask1.sum():mask2.sum()]] = s_tloss[mask2].iloc[mask1.sum():].values
+                                        s_tloss.loc[indexes[mask2.sum():]] = s_tloss[mask0].iloc[mask2.sum()]
+                                    else:
+                                        s_tloss.loc[indexes[:mask2.sum()]] = (s_tloss[mask1].iloc[:mask2.sum()].values + s_tloss[mask2].values) /2
+                                        s_tloss.loc[indexes[mask2.sum():mask1.sum()]] = s_tloss[mask1].iloc[mask2.sum():].values
+                                        s_tloss.loc[indexes[mask1.sum():]] = s_tloss[mask0].iloc[mask1.sum()]
+        return s_tloss
+
+    def calc_nav_weight(self):
         excess_noise = self.boat_noise - self.noise_threshold
         gdf = gpd.read_file(self.traversier_path)
         l_nav = []
-        _ = df_areas.apply(lambda row: self.zone_intersects_line(row, gdf.loc[0, "geometry"], l_nav), axis=1)
-        _ = df_areas.apply(lambda row: self.zone_intersects_line(row, gdf.loc[1, "geometry"], l_nav), axis=1)
-        df_areas["nav_exp"] = 0
+        _ = self.df_areas.apply(lambda row: self.zone_intersects_line(row, gdf.loc[0, "geometry"], l_nav), axis=1)
+        _ = self.df_areas.apply(lambda row: self.zone_intersects_line(row, gdf.loc[1, "geometry"], l_nav), axis=1)
+        print(f"There are {len(l_nav)} areas visited by a boat.")
         n_areas = int(self.range_ultra_max / self.converter.width_area)
         dic_to_calc, mat_which_value = ut.get_to_calculate(self.angle_calc, 1 + n_areas)
-        for areat in l_nav:
-            for freq in self.boat_freqs:
-                s_tloss = pd.Series(0, index=df_areas.index, dtype=float)
-                l_angles = [-np.round(np.pi/2, 8), 0, np.round(np.pi/2, 8), np.round(np.pi,8)]
-                dic_angles_range = {angle : self.range_ultra_max for angle in l_angles}
-                
-                def calc_nav_weight_single_area(u, v, n2):
-                    depths, substrat = self.topo.depths_and_substrat(areat, (areat[0] + u*n2, areat[1] + v*n2))
-                    depthsb = self.converter.create_depthsb(depths[:,1].max())
-                    if len(depthsb) > 0:
-                        tlosses = self.tloss(0, depthsb, n, freq, depths, substrat)
-                        for m, col in enumerate(tlosses.columns):
-                            x, y = areat[0] + u*(m+1), areat[1] + v*(m+1)
-                            mask = ((df_areas["x"] == x) & (df_areas["y"] == y))
-                            if mask.sum() >0:
-                                s_tloss[mask] = tlosses[col].iloc[:mask.sum()].apply(lambda val : max(val, 0))
-                                if (s_tloss[mask] == 0).all():
-                                    break
-                        return tlosses.columns[m], (m == len(tlosses.columns) - 1)
-                    else :
-                        return 0, True
-                    
-                for ij, n in dic_to_calc.items():
-                    i, j = ij[0], ij[1]
-                    if i == 0:
-                        s_tloss[((df_areas["x"] == areat[0]) & (df_areas["y"] == areat[1]))] = self.source_level_beluga - self.noises_for_nav[freq]
-                    else:
-                        l = ut.comb(i, j, (0, 0))
-                        norme = np.ceil(ut.norme(i, j)).astype(int)
-                        for u, v in l:        
-                            theta = np.round(np.arctan2(v, u), 8)
-                            ind = ut.find_indice_angles(theta, l_angles)
-                            max_range = max(dic_angles_range[l_angles[ind]], dic_angles_range[l_angles[ind-1]])
-                            n2 = min(n, int(max_range/norme/self.converter.width_area))
-                            if n2 > 0:
-                                range_max_reached = True
-                                while range_max_reached:
-                                    range_max, range_max_reached = calc_nav_weight_single_area(u, v, n2)
-                                    n2 *= 2
-                                dic_angles_range[theta] = range_max * self.mult_range
-                                l_angles.insert(ind, theta)
-
-                for i in range(mat_which_value.shape[0]):
-                    for j in range(mat_which_value.shape[1]):
-                        if mat_which_value[i,j] is not None and len(mat_which_value[i,j]) > 2:
-                            for uv0, uv1, uv2 in zip(ut.comb(i,j,areat), ut.comb(mat_which_value[i,j][0][0], mat_which_value[i,j][0][1],areat), ut.comb(mat_which_value[i,j][1][0],mat_which_value[i,j][1][1],areat)):
-                                mask0 = ((df_areas["x"] == uv0[0]) & (df_areas["y"] == uv0[1]))
-                                mask1 = ((df_areas["x"] == uv1[0]) & (df_areas["y"] == uv1[1]))
-                                mask2 = ((df_areas["x"] == uv2[0]) & (df_areas["y"] == uv2[1]))
-                                if mask0.sum() > 0:
-                                        indexes = s_tloss[mask0].index
-                                        if (mask0.sum() <= mask1.sum()) & (mask0.sum() <= mask2.sum()):
-                                            s_tloss.loc[indexes] = (s_tloss[mask1].iloc[:mask0.sum()].values + s_tloss[mask2].iloc[:mask0.sum()].values)/2
-                                        elif (mask0.sum() > mask1.sum()) & (mask0.sum() <= mask2.sum()):
-                                            s_tloss.loc[indexes[:mask1.sum()]] = (s_tloss[mask1].values + s_tloss[mask2].iloc[:mask1.sum()].values) /2
-                                            s_tloss.loc[indexes[mask1.sum():]] = s_tloss[mask2].iloc[mask1.sum():mask0.sum()].values
-                                        elif (mask0.sum() <= mask1.sum()) & (mask0.sum() > mask2.sum()):
-                                            s_tloss.loc[indexes[:mask2.sum()]] = (s_tloss[mask1].iloc[:mask2.sum()].values + s_tloss[mask2].values) /2
-                                            s_tloss.loc[indexes[mask2.sum():]] = s_tloss[mask1].iloc[mask2.sum():mask0.sum()].values
-                                        else :
-                                            if mask1.sum()<= mask2.sum():
-                                                s_tloss.loc[indexes[:mask1.sum()]] = (s_tloss[mask1].values + s_tloss[mask2].iloc[:mask1.sum()].values) /2
-                                                s_tloss.loc[indexes[mask1.sum():mask2.sum()]] = s_tloss[mask2].iloc[mask1.sum():].values
-                                                s_tloss.loc[indexes[mask2.sum():]] = s_tloss[mask0].iloc[mask2.sum()]
-                                            else:
-                                                s_tloss.loc[indexes[:mask2.sum()]] = (s_tloss[mask1].iloc[:mask2.sum()].values + s_tloss[mask2].values) /2
-                                                s_tloss.loc[indexes[mask2.sum():mask1.sum()]] = s_tloss[mask1].iloc[mask2.sum():].values
-                                                s_tloss.loc[indexes[mask1.sum():]] = s_tloss[mask0].iloc[mask1.sum()]
-                df_areas["nav_exp"] += s_tloss/len(self.boat_freqs)
-        df_areas["nav_weight"] = 1 + (self.gain - 1) / excess_noise * df_areas["nav_exp"] / len(l_nav)
-        df_areas.drop(columns ="nav_exp", inplace=True)
+        args = [(areat, freq, dic_to_calc, mat_which_value) for areat in l_nav for freq in self.boat_freqs]
+        if min(self.n_processes, len(args)) > 1:
+            with Pool(processes=min(self.n_processes, len(args))) as pool:
+                results = list(pool.imap_unordered(self.calc_nav_weight_multi_pros, args))
+        else:
+            results = [self.calc_tdoa_errors(arg) for arg in args]
+        nav_exp = pd.Series(0, index=self.df_areas.index, dtype=float)
+        for s_tloss in results:
+            nav_exp += s_tloss
+        self.df_areas["nav_weight"] = 1 + (self.gain - 1) / excess_noise * nav_exp / len(self.boat_freqs) / len(l_nav)
         return None
 
     def create_df_areas(self, new = False):
         if (not new) & ("df_areas.csv" in os.listdir(self.path)):
-            df_areas = pd.read_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
-            df_areas.drop(columns="Unnamed: 0", inplace = True)
+            self.df_areas = pd.read_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
+            self.df_areas.drop(columns="Unnamed: 0", inplace = True)
         else: 
             n = 0
             for i in range (self.converter.n_areas_x):
@@ -291,7 +300,7 @@ class Calculator:
                     if d>0:
                         #n += np.ceil(d/self.converter.depth_area).astype(int)
                         n += self.converter.n_depth_area(d)
-            df_areas = pd.DataFrame({"x": np.empty(n, dtype=int), "y": np.empty(n, dtype=int), "d": np.empty(n, dtype=int), "w": np.empty(n, dtype=float)})   #x, y, depth, weight
+            self.df_areas = pd.DataFrame({"x": np.empty(n, dtype=int), "y": np.empty(n, dtype=int), "d": np.empty(n, dtype=int), "w": np.empty(n, dtype=float)})   #x, y, depth, weight
             n = 0
             for i in range (self.converter.n_areas_x):
                 for j in range(self.converter.n_areas_y):
@@ -300,17 +309,16 @@ class Calculator:
                         #d = np.floor(d/self.converter.depth_area).astype(int)
                         m = self.converter.n_depth_area(d)
                         for k in range (m):
-                            df_areas.at[n, "x"] = i
-                            df_areas.at[n, "y"] = j
-                            df_areas.at[n, "d"] = k
-                            df_areas.at[n, "w"] = 1
-                            df_areas.at[n, "weight_density"] = self.weight_density(i, j, k) #les points sont en coordoonées d'area et non en coordonnées angulaire
+                            self.df_areas.at[n, "x"] = i
+                            self.df_areas.at[n, "y"] = j
+                            self.df_areas.at[n, "d"] = k
+                            self.df_areas.at[n, "w"] = 1
+                            self.df_areas.at[n, "weight_density"] = self.weight_density(i, j, k) #les points sont en coordoonées d'area et non en coordonnées angulaire
                             n += 1
-            self.calc_nav_weight(df_areas)
-            df_areas["w"] = df_areas["weight_density"] * df_areas["nav_weight"]
+            self.calc_nav_weight()
+            self.df_areas["w"] = self.df_areas["weight_density"] * self.df_areas["nav_weight"]
             print("df_areas created")
-            df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
-        self.df_areas = df_areas
+            self.df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
         return None
 
 ### Acoustic losses
