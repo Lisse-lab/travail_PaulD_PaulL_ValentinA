@@ -29,7 +29,9 @@ class Model:
         for attr, _ in kwargs.items():
             if not hasattr(f.Calculator, attr):
                 raise AttributeError(f"Calculator has no attribute '{attr}'.")
-        self.calculator = f.Calculator(self.converter, new_dics=new)
+        if "n_processes" in kwargs.keys():
+            ga.Genetic_Algo.n_processes = min(kwargs["n_processes"], ga.Genetic_Algo.n_processes)
+        self.calculator = f.Calculator(self.converter, new_dics=new, **kwargs)
         self.save_args(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy, kwargs)
         cls_points.NPointBayesian.set_value(self.calculator.main_func)
         cls_points.NPoint.set_n_tetrahedras(n_tetrahedras)
@@ -54,10 +56,7 @@ class Model:
         with open(os.path.join(self.path, "last_args.pkl"), "wb") as f:
             pickle.dump((lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy, kwargs), f)
             
-    def find_max(self, n_processes = None, **kwargs):
-        if not n_processes is None:
-            self.calculator.n_processes = min(n_processes, self.calculator.n_processes)
-            ga.Genetic_Algo.n_processes = min(n_processes, ga.Genetic_Algo.n_processes)
+    def find_max(self, **kwargs):
         self.bayesian_process.modify(**kwargs)     
         npoint = self.bayesian_process.find_max(self.converter, self.calculator,)
         npoint.value()

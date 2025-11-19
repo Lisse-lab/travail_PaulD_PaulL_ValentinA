@@ -281,7 +281,7 @@ class Calculator:
             with Pool(processes=min(self.n_processes, len(args))) as pool:
                 results = list(pool.imap_unordered(self.calc_nav_weight_multi_pros, args))
         else:
-            results = [self.calc_tdoa_errors(arg) for arg in args]
+            results = [self.calc_nav_weight_multi_pros(arg) for arg in args]
         nav_exp = pd.Series(0, index=self.df_areas.index, dtype=float)
         for s_tloss in results:
             nav_exp += s_tloss
@@ -378,7 +378,7 @@ class Calculator:
     def calc_tdoa_errors(self, args):
         point, freq, freq_range, k = args
         l_angles = [-np.round(np.pi/2, 8), 0, np.round(np.pi/2, 8), np.round(np.pi,8)]
-        dic_angles_range = {angle : self.max_range for angle in l_angles}
+        dic_angles_range = {angle : self.range_ultra_max for angle in l_angles}
         s_snr_dB = pd.Series(index=self.df_areas.index, dtype=float)
         s_tdoa_errors = pd.Series(index=self.df_areas.index, dtype=float)
         s_use_crb = pd.Series(index=self.df_areas.index, dtype=bool)
