@@ -1,3 +1,9 @@
+"""
+Ce fichier contient les différentes fonctions pour la topologie : il y a une fonction qui créer un dictionnaire, où à chaque zone on associe la profondeur, un autre où on associe le substrat et le dernier qui permet de créer la liste exploitable pour bellhop
+This file contains the various functions related to topology: one function creates a dictionary mapping each zone to its depth, another maps each zone to its substrate type, and the last one generates the list that can be used by Bellhop 
+"""
+
+
 import pickle
 import os
 import pandas as pd
@@ -17,8 +23,9 @@ import hydrophone_placement_scripts.utils_scripts.utils as ut
 class Topo:
     path = os.path.join(os.path.dirname(__file__), "../datas/")
 
-    def __init__(self, converter, new_dic_depths = False, new_dic_substrats = False, substrat = True):
+    def __init__(self, converter, new_dic_depths = False, new_dic_substrats = False, substrat = True, save = True):
         self.converter = converter
+        self.save = save
         self.create_dic_depths(new_dic_depths)
         if substrat:
             self.create_dic_substrats(new_dic_substrats)
@@ -47,8 +54,9 @@ class Topo:
                     dic_depths[key][0] = dic_depths[key][0]/dic_depths[key][1]
             for key in dic_depths.keys():
                 dic_depths[key] = dic_depths[key][0]
-            with open(os.path.join(self.path, "for_model", "dic_depths.pkl"), "wb") as f:
-                pickle.dump(dic_depths, f)
+            if self.save:
+                with open(os.path.join(self.path, "for_model", "dic_depths.pkl"), "wb") as f:
+                    pickle.dump(dic_depths, f)
 
             print("dic_depths created")
         self.dic_depths = dic_depths    
@@ -72,11 +80,32 @@ class Topo:
             for key in dic_substrats.keys():
                 dic_substrats[key] = dic_substrats[key][:-1]
             self.dic_substrats = dic_substrats
-            with open(os.path.join(self.path, "for_model", "dic_substrats.pkl"), "wb") as f:
-                pickle.dump(dic_substrats, f)
+            if self.save:
+                with open(os.path.join(self.path, "for_model", "dic_substrats.pkl"), "wb") as f:
+                    pickle.dump(dic_substrats, f)
             print("dic_substrats created")
         return None
 
+    def depths_and_substrat(self, l_depths):
+        depths = []
+        substrat = np.array([0.,0.,0.])
+        compt = 0
+        for dist, areas in l_depths:
+            depth = 0
+            for area in areas:
+                depth += max(self.dic_depths.get(area, 0), 0)
+                if (area in self.dic_substrats.keys()) and (self.dic_substrats[area][0] != 0):
+                    substrat += self.dic_substrats[area]
+                    compt += 1
+            depth /= len(areas)
+            depths.append([np.round(dist), depth])
+        depths.append([np.round(dist)+1, depth])
+        if compt != 0:
+            return (np.array(depths), substrat/compt)
+        else :
+            return (np.array(depths), substrat)
+
+"""
     def depths_and_substrat(self, areat, arear):
         x1, y1 = areat
         x2, y2 = arear
@@ -182,18 +211,17 @@ class Topo:
             return (True, substrat / compt)
         else:
             return (False, substrat)
-        
+"""       
 if __name__ == "__main__":
     lat_min = 47.65
     lat_max = 48.07
     lon_min = -70.04
     lon_max = -69.28
-    width_area = 1000
-    depth_area = 5
-    accuracy = 1
+    width_area = 500
+    depth_area = 2
 
-    converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy)
-    topo = Topo(converter)
+    converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area)
+    topo = Topo(converter, save = False)
     df = pd.DataFrame([(x, y, d) for (x, y), d in topo.dic_depths.items()], columns=['x', 'y', 'depth'])
     df = df[df.apply(lambda row : topo.converter.area_in_area((row.x, row.y)), axis = 1)]
     df["polygone"] = df.apply(lambda row : Polygon(topo.converter.area2perim_lla((row.x, row.y))), axis=1)

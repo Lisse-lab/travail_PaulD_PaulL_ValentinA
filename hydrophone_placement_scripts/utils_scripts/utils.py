@@ -1,3 +1,9 @@
+"""
+Ce module contient differents fonctions utiles dans les differentes parties du code
+This module contains some fuctions usefull in different parts
+"""
+
+
 import numpy as np
 import math
 import matplotlib.pyplot as plt
@@ -81,6 +87,47 @@ def dms_to_dd (dms) :
         dd *= -1
     return dd
 
+def sort_insert_p_dist(x, lx, diff):
+    """
+    To insert an element x in a sorted list lx, while all the elements in the list must be different by at least diff.
+    x and the elements of lx must be tuples and sorted by the second value
+    """
+    i = 0
+    bool = True
+    m = len(lx)
+    while (i<m) & bool:
+        if x[1] > diff + lx[i][1]:
+            i+=1
+        else:
+            bool = False
+    if i==m :
+        lx.insert(i, x)
+        return None
+    elif abs(x[1] - lx[i][1]) > diff:
+        lx.insert(i, x)
+        return None
+    return None
+
+def sort_max_angle(l):
+    l_angles = [np.arctan2(e[1], e[0]) for e in l]
+    sorted_indices = sorted(range(len(l_angles)), key=lambda k: l_angles[k])
+    l_angles2 = [l_angles[i] for i in sorted_indices]
+    l_diff = []
+    for t2, t1 in zip(l_angles2[1:], l_angles2):
+        l_diff.append(t2-t1)
+    return np.max(l_diff),[l[i] for i in sorted_indices]
+
+def modif_area_q(area, areat, q):
+    if q == 0:
+        return area[0] + areat[0], area[1] + areat[1]
+    elif q == 1:
+        return - area[0] + areat[0], area[1] + areat[1]
+    elif q == 2:
+        return - area[0] + areat[0], - area[1] + areat[1]
+    else :
+        return area[0] + areat[0], - area[1] + areat[1]
+
+"""
 def sort_insert_depth(x, lx):
     i = 0
     bool = True
@@ -96,7 +143,7 @@ def sort_insert_depth(x, lx):
     elif x[0]!=lx[i][0]:
         lx.insert(i, x)
         return True
-    return False
+    return False"""
 
 def log(x):
     return np.log(np.finfo(float).eps + x)
@@ -118,7 +165,7 @@ def comb(i, j, area):
 def norme(x, y):
     return np.sqrt(x**2+y**2)
 
-def get_points_to_calculate(angle_max, points_tried, angles_diff, dic_to_calc, mat_which_value):
+"""def get_points_to_calculate(angle_max, points_tried, angles_diff, dic_to_calc, mat_which_value):
     def rec_f (ind, previous, angle):
         p = points_tried[ind]
         pgcd = np.gcd(p[0],p[1])
@@ -189,4 +236,4 @@ def find_indice_angles(angle, l_angles):
             boolean = False
         else:
             ind += 1
-    return ind
+    return ind"""

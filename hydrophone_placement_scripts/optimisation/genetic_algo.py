@@ -65,7 +65,7 @@ class Genetic_Algo:
     def init_worker(self):
         cls_points.NPoint.set_n_tetrahedras(self.n_tetrahedras)
         self.set_probs()
-        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax, self.converter.accuracy)
+        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax)
         cls_points.NPoint.set_range(self.range)
         cls_points.NPointGenetic.set_value(self.esp_improv)
         cls_points.Point.set_topo(self.calculator.topo, self.calculator.height_sensor)

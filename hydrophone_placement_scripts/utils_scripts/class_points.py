@@ -1,4 +1,20 @@
-#implémenter update npoint
+"""
+Ce module est celui qui contient les éléments de bases au niveau de la logique pour les différents algorithmes.
+Les Points représentent les tétrahèdres, les NPoints les ensembles de n tétrahèdres qui forment une configuration de réseau et enfin les Set of NPoints qui sont un ensemble des réseauw qui ont été testés soit pour l'algorithme Bayesien soit pour l'algorithme génétique
+Il y a, à chaque fois une classe normale, une classe Bayesienne et une Génétique car les deux dernières ont des spécificités différentes :
+- Un Point Bayesien est dans le fleuve, il ne peut pas être sur Terre
+- Dans un NPoint Bayesien, chaque tétrahèdre est à une distance inférieure à 2 range_max (range_max correspond à la distance maximale à laquelle un béluga ne peut être détecté), cela permet d'être sur que chaque tétrahèdre est utile (un tétrahèdre isolé étant inutile)
+- Dans un NPoint Bayesien les tétrahdères sont classés par ordre croissant (en fonction de leurs coordonnées), cela sert à évitér de calculer plusieurs fois la même chose : chaque tétrahèdre est inter-changeable
+- Dans un Set of NPoints Bayesien il ne faut pas qu'il y ait deux fois le même point sinon la matrice de covariance est non inversible
+
+This module contains the basic logical components used by the different algorithms.
+Points represent the individual tetrahedra, NPoints represent sets of n tetrahedra forming a network configuration, and Sets of NPoints are collections of networks that have been tested either by the Bayesian algorithm or by the genetic algorithm
+For each of these, there are three versions: a standard class, a Bayesian class, and a Genetic class, because the last two have specific constraints:
+- A Bayesian Point must lie in the river; it cannot be located on land
+- In a Bayesian NPoint, each tetrahedron must be within a distance smaller than 2 range_max (where range_max is the maximum distance at which a beluga can be detected). This ensures that every tetrahedron is useful — an isolated one would be useless
+- In a Bayesian NPoint, the tetrahedra are sorted in ascending order (based on their coordinates). This avoids recomputing equivalent configurations, since tetrahedra are interchangeable.
+- In a Bayesian Set of NPoints, no configuration may appear twice; otherwise, the covariance matrix becomes singular
+"""
 
 import numpy as np
 import random
@@ -9,9 +25,8 @@ class Point:
     ymin = 0
     xmax = 1
     ymax = 1
-    accuracy = 1 # units : area
-    lx = np.ceil(np.log2(1 + (xmax-xmin)/accuracy)).astype(int)
-    ly = np.ceil(np.log2(1 + (ymax-ymin)/accuracy)).astype(int)
+    lx = np.ceil(np.log2(1 + (xmax-xmin))).astype(int)
+    ly = np.ceil(np.log2(1 + (ymax-ymin))).astype(int)
     dx = (xmax-xmin)/(2**lx-1)
     dy = (ymax-ymin)/(2**ly-1)
     params_cor = np.array([2, 2, 1/2/(40**2)]) #utils.esp_diff(xmax-xmin), 40 is an average 
@@ -19,14 +34,13 @@ class Point:
     height_sensor = None
     
     @classmethod
-    def update_point(cls, xmin, ymin, xmax, ymax, accuracy = 1):
-        cls.accuracy = accuracy
+    def update_point(cls, xmin, ymin, xmax, ymax):
         cls.xmin = xmin
         cls.ymin = ymin
         cls.xmax = xmax
         cls.ymax = ymax
-        cls.lx = np.ceil(np.log2(1 + (xmax-xmin)/cls.accuracy)).astype(int)
-        cls.ly = np.ceil(np.log2(1 + (ymax-ymin)/cls.accuracy)).astype(int)
+        cls.lx = np.ceil(np.log2(1 + (xmax-xmin))).astype(int)
+        cls.ly = np.ceil(np.log2(1 + (ymax-ymin))).astype(int)
         cls.dx = (xmax - xmin)/(2**cls.lx-1)
         cls.dy = (ymax - ymin)/(2**cls.ly-1)
         cls.params_cor = np.array([2/((xmax - xmin)**2), 2/((ymax - ymin)**2), 1/2/(40**2)])
@@ -72,6 +86,10 @@ class Point:
         return self.dist_withdepth(c[0], c[1], d)
         
     def norme(self, other):
+        """
+        Calcule la norme que l'on utilisera pour la corrélation dans l'algorithme bayesien
+        Compute the norm that will be used for correlation in the Bayesian algorithm
+        """
         return (self.params_cor[0] * ((abs(self.coords[0] - other.coords[0])) ** 2)
                 + self.params_cor[1] * ((abs(self.coords[1] - other.coords[1])) ** 2)
                 + self.params_cor[2] * ((abs(self.depth() - other.depth())) ** 2))
@@ -83,7 +101,7 @@ class Point:
         return self.bin_coords == other.bin_coords
 
 class PointBayesian (Point):
-    max_compt = 100
+    max_compt = 1000
 
     def __init__(self, bin_coords = None):
         if bin_coords is None:
@@ -98,6 +116,10 @@ class PointBayesian (Point):
             assert self.in_water(), "the PointBayesian is not bayesian"
         
     def create_random_point(self, range):
+        """
+        Utile pour create_new_pointbayesian pour créer des cooordonnées qui sont dans la zone à une distance inférieure de range au Point
+        Useful for create_new_pointbayesian to generate coordinates that lie within the area at a distance smaller than range from the Point
+        """
         compt = 0
         d = np.sqrt(random.uniform(0, (2*range)**2))
         theta = random.uniform(0, 2*np.pi)
@@ -115,6 +137,10 @@ class PointBayesian (Point):
         return bin_coords
     
     def create_new_pointbayesian(self, range):
+        """
+        Crée un Point Bayesien a proximité, pour s'assurer que les points ne soient pas isolés
+        Create a nearby Bayesian Point to ensure that the points are not isolated
+        """
         bin_coords = self.create_random_point(range)
         compt = 0
         while not Point(bin_coords=bin_coords).in_water():
@@ -171,6 +197,10 @@ class NPoint :
         return nbin_coords
 
     def corr(self, other):
+        """
+        Calcule la corrélation utilisée dans l'algorithme Bayesien entre le NPoint et un autre NPoint
+        Computes the correlation used in the Bayesian algorithm between the NPoint and another NPoint
+        """
         e1 = self.points
         e2 = other.points
         assert len(e1) == len(e2), "e1 and e2 do not have the same size"
@@ -186,6 +216,10 @@ class NPoint :
         return True
     
     def verify_range(self):
+        """
+        Pour vérifier si aucun point n'est isolé
+        To check wether one Point is isolated
+        """
         t = np.array([False] * self.n_tetrahedras)
         for i in range(len(self.points)):
             for j in range(i):
@@ -203,7 +237,10 @@ class NPoint :
         return self.points == other.points
 
     def is_in(self, set_of_npoints):
-        for npoint in set_of_npoints:
+        """
+        Pour savoir si un NPoint est dans un set_of_npoints
+        To know if a NPoint is in a set_of_npoints or not"""
+        for npoint in set_of_npoints.set_of_npoints:
             if self == npoint:
                 return True
         return False
@@ -215,16 +252,16 @@ class NPointBayesian (NPoint):
         if points is None:
             points = []
             if nbin_coords is None:
-                t = np.array([False] * NPoint.n_tetrahedras)
+                t = np.array([False] * NPoint.n_tetrahedras) # To check wether the Points are not isolated
                 points = []
                 for _ in range (NPoint.n_tetrahedras):
                     points.append(PointBayesian())
                 for i in range(NPoint.n_tetrahedras):
                     for j in range(i):
-                        if points[i].dist_point_xy(points[j]) <= 2*self.range:
+                        if points[i].dist_point_xy(points[j]) <= 2*self.range: # To check wether the Points are not isolated
                             t[i] = True
                             t[j] = True
-                tfalse = np.where(~t)[0]
+                tfalse = np.where(~t)[0] #While some points are isolated, we replace the isolated points by a non isolated one
                 while len(tfalse) != 0:
                     i = tfalse[0]
                     j = random.choice([x for x in range(NPoint.n_tetrahedras) if x != i])
@@ -234,16 +271,19 @@ class NPointBayesian (NPoint):
                             t[j] = True
                     tfalse = np.where(~t)[0]
                 points2 = []
-                for point in points:
+                for point in points: #To sort the points by coordinates
                     ut.sort_insert_point(point, points2)
-                super().__init__(points = points)
+                super().__init__(points = points2)
             else:
                 assert len(nbin_coords) == NPoint.n_tetrahedras * (Point.lx + Point.ly), "nbin_coords is not the right size"
                 for i in range (NPoint.n_tetrahedras):
                     ut.sort_insert_point(PointBayesian(nbin_coords[i*(Point.lx+Point.ly) : (i+1)*(Point.lx+Point.ly)]), points)
                 super().__init__(points = points)
         else:
-            super().__init__(points = points)
+            points2 = []
+            for point in points: #To sort the points by coordinates
+                ut.sort_insert_point(point, points2)
+            super().__init__(points = points2)
             assert self.in_water() & self.verify_range(), "the NPointBayesian is not Bayesian"
 
     def to_genetic(self):
@@ -272,11 +312,12 @@ class NPointGenetic (NPoint):
     def set_p_mut(cls, p_mut):
         cls.p_mut = p_mut
         return None
-
-    def esp_improv(self):
-        return 0
         
     def breed(self, other, ks):
+        """
+        Pour créer un nouveau NPoint à partir de deux parents
+        To create a new NPoint thanks to two parents
+        """
         b1 = self.nbin_coords()
         b2 = other.nbin_coords()
         p_mut = self.p_mut
@@ -293,11 +334,15 @@ class NPointGenetic (NPoint):
         return NPointGenetic(nbin_coords = new_nbin_coords)
 
     def corr(self, other):
+        """
+        Calcule la corrélation entre deux NPoints pour après la mettre dans la matrice de covariance
+        Computes the correlation between two NPoints to then place it in the covariance matrix
+        """
         e1 = self.points
         e2 = other.points
         assert len(e1) == len(e2), "e1 and e2 do not have the same size"
         l=[]
-        for i in range (NPoint.n_tetrahedras):
+        for i in range (NPoint.n_tetrahedras): #I am not sure why I wrote that because the points should already be sorted
             ut.sort_insert_point(e1[i], l)
         s = 0
         for i in range (NPoint.n_tetrahedras):
@@ -397,13 +442,13 @@ class Set_of_NPointsBayesian (Set_Of_NPoints):
         if npoint is None:
             npoint = NPointBayesian()
             compt = 0
-            while npoint.is_in(self.set_of_npoints):
+            while npoint.is_in(self):
                 assert compt < Set_of_NPointsBayesian.max_compt, "too many tries to get a npoint bayesian not in the set of points"
                 compt+=1
                 npoint = NPointBayesian()
         else:
             assert isinstance(npoint, NPointBayesian), "the new npoint is not bayesian"
-            assert not npoint.is_in(self.set_of_npoints), "the npoint is already in the set of points, R is now singular"
+            assert not npoint.is_in(self), "the npoint is already in the set of points, Sigma is now singular"
         super().add_npoint(npoint, value)
 
 class Set_of_NPointsGenetic (Set_Of_NPoints):
@@ -439,6 +484,10 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
         cls.n_sep = n_sep
 
     def breed(self, set_of_parents):
+        """
+        Pour créer un nouvel set_of_individuals à partir d'un set_of_parents
+        To create a new set_of_individuals thanks to a set_of_parents
+        """
         i_par1 = random.choices(range(set_of_parents.size), self.probs)[0]
         i_par2 = random.choices(range(set_of_parents.size), self.probs)[0]
         compt = 0
@@ -460,4 +509,8 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
         self.add_npoint(set_of_parents.set_of_npoints[i_par1].breed(set_of_parents.set_of_npoints[i_par2], ks))
 
     def nb_bayesian(self):
+        """
+        C'est un indicateur pour connaitre le nombre de NPoints dont tous les points sont dans l'eau et non isolés
+        It is an indicator used to determine the number of NPoints for which all points lie in the water and none are isolated
+        """
         return len([x for x in self.values if x>=0])

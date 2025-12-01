@@ -13,8 +13,8 @@ class Bayesian_Process:
     min_expected_improvement = 0.001
     max_iter = 250
     ksi = 0.01
-    sigma = 1
-    sigmaf = 0.1
+    sigmaf = 1
+    sigman = 0.1
 
     def __init__(self, path = None, l_nbin_coords = None, values = None, expected_improvements = None):
         self.path = path
@@ -45,7 +45,7 @@ class Bayesian_Process:
         self.mu = (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@self.set_of_npointsbayesian.values)[0,0] / (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@np.ones(self.set_of_npointsbayesian.size))[0,0]
         
     def neg_log_likelihood(self, params):
-        cls_points.Point.log_params_cor = params[2:]
+        cls_points.Point.params_cor = params[2:]
         self.sigmaf = params[0]
         self.sigman = params[1]
         self.update_Sigma_invSigma()
@@ -54,8 +54,8 @@ class Bayesian_Process:
 
     def max_likelihood(self):
         print("Maximisation of likelihood")
-        bounds = [(0, None) for _ in range(5)]
-        params = np.concatenate(([self.sigma, self.sigmaf, cls_points.Point.log_params_cor]))
+        bounds = [(1e-6, None) for _ in range(5)]
+        params = np.concatenate([np.array([self.sigmaf, self.sigman]), cls_points.Point.params_cor])
         result = optimize.minimize(self.neg_log_likelihood, params, method="Nelder-Mead", bounds = bounds, options={"disp" : True, "maxiter" : 1200})
         self.neg_log_likelihood(result.x)        
     
@@ -92,11 +92,13 @@ class Bayesian_Process:
         return 1 + self.set_of_npointsbayesian.argmax()
 
     def esp_improv(self, npoint):
-        if npoint.in_water() & npoint.verify_range():
+        if npoint.is_in(self.set_of_npointsbayesian):
+            return 0
+        elif npoint.in_water() & npoint.verify_range():
             k = self.sigmaf ** 2 * np.matrix([npoint.corr(e) for e in self.set_of_npointsbayesian.set_of_npoints])
             fexpec = self.mu + (k @ self.invSigma @ [v - self.mu for v in self.set_of_npointsbayesian.values])[0,0]
             s = (self.sigmaf ** 2 - k @ self.invSigma @ k.T)[0,0]
-            a = (fexpec - self.val_max - self.varf * self.ksi)
+            a = (fexpec - self.val_max - self.ksi)
             return max(a / 2 * (1 + math.erf(a/(2*s))) + s * 1/math.sqrt(2*math.pi) * math.exp(-1/2 * (a/s)**2), 0) #the values should be strictly positive
         else:
             return -1

@@ -10,9 +10,13 @@ dash
 plotly
 folium
 pyproj
+arlpy
+geopandas
+rasterio
+tqdm
+seaborn
+openpyxl
+nbformat
+jupytext
 #attention il faut une version python entre 3.9 et 3.12
-#rajouter arlpy et geopandas (rasterio pour calc_mu)    
 #sometimes hydrophone sensitivity or sample rate is hardcoded in paul's code
-#tqdm, seaborn for ziv_zakai, openpyxl for excel reading
-#nbformat pour affichage
-#jupytext ?

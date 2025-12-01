@@ -1,3 +1,9 @@
+"""
+La classe Model est une surcouche de celle de calculator avec différentes fonctions d'affichage et de gestion des paths, sachant que lorsque les arguments sont différents, les différentes zones ne sont plus les mêmes il faut donc recréer les dictionnaires de profoneur, de substrat et le df_areas
+The Model class is a wrapper around the Calculator class, adding various display functions and path-management features. Since changing the arguments alters the zone definitions, the depth dictionary, the substrate dictionary, and the df_areas must be regenerated accordingly
+"""
+
+
 import os
 import matplotlib.pyplot as plt
 import pickle
@@ -18,21 +24,21 @@ import hydrophone_placement_scripts.to_optimise.func_to_optimise as f
 
 
 class Model:
-    def __init__(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, n_tetrahedras, accuracy=1, load=False, version=None, new = False, **kwargs):
+    def __init__(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, n_tetrahedras, load=False, version=None, new = False, **kwargs):
         self.path = determine_path(n_tetrahedras, load, version)
         os.makedirs(os.path.join(os.path.dirname(__file__), "../datas/for_model"), exist_ok=True)
         
         if not new:
             new = self.compare_args(lat_min, lat_max, lon_min, lon_max, width_area, depth_area)
-        self.converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy)
-        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax, self.converter.accuracy)
+        self.converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area)
+        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax)
         for attr, _ in kwargs.items():
             if not hasattr(f.Calculator, attr):
                 raise AttributeError(f"Calculator has no attribute '{attr}'.")
         if "n_processes" in kwargs.keys():
             ga.Genetic_Algo.n_processes = min(kwargs["n_processes"], ga.Genetic_Algo.n_processes)
         self.calculator = f.Calculator(self.converter, new_dics=new, **kwargs)
-        self.save_args(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy, kwargs)
+        self.save_args(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, kwargs)
         cls_points.NPointBayesian.set_value(self.calculator.main_func)
         cls_points.NPoint.set_n_tetrahedras(n_tetrahedras)
         if load:
@@ -50,11 +56,11 @@ class Model:
             new = (lasts != news)
         return new
 
-    def save_args(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy, kwargs):
+    def save_args(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, kwargs):
         with open(os.path.join(os.path.dirname(__file__), "../datas/for_model/last_args.pkl"), "wb") as f:
             pickle.dump([lat_min, lat_max, lon_min, lon_max, width_area, depth_area], f)
         with open(os.path.join(self.path, "last_args.pkl"), "wb") as f:
-            pickle.dump((lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy, kwargs), f)
+            pickle.dump((lat_min, lat_max, lon_min, lon_max, width_area, depth_area, kwargs), f)
             
     def find_max(self, **kwargs):
         self.bayesian_process.modify(**kwargs)     
@@ -224,7 +230,7 @@ class Model:
                 ).add_to(map)
         map.save(os.path.join(self.path, f"weights_map_{cls_points.NPoint.n_tetrahedras}.html"))
 
-        df.dropna(inplace = True)
+        df = df[~df["error"].isna()]
         
         min_alpha, max_alpha = 0.5, 1.0
         df["alpha"] = min_alpha + (max_alpha - min_alpha) * ((df["w"] - df["w"].min()) / (df["w"].max() - df["w"].min()))
@@ -257,7 +263,7 @@ class Model:
 
     def load_error(self):
         if "error.csv" in os.listdir(self.path):
-            self.calculator.load_error(self.path, self.best_npoint)
+            self.calculator.load_error(self.path)
         else :
             self.best_npoint().value()
             self.calculator.save_error(self.path)
@@ -334,7 +340,7 @@ def determine_path(n_tetrahedras, load, version = None):
 def load(n_tetrahedras, version = None, **kwargs):
     path = determine_path(n_tetrahedras, True, version)
     with open(os.path.join(path, "last_args.pkl"), "rb") as f:
-        lat_min, lat_max, lon_min, lon_max, width_area, depth_area, accuracy, old_kwargs = pickle.load(f)
+        lat_min, lat_max, lon_min, lon_max, width_area, depth_area, old_kwargs = pickle.load(f)
     for key in kwargs.keys():
         old_kwargs[key] = kwargs[key]
-    return Model(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, n_tetrahedras, accuracy, True, version, **old_kwargs)
+    return Model(lat_min, lat_max, lon_min, lon_max, width_area, depth_area, n_tetrahedras, True, version, **old_kwargs)

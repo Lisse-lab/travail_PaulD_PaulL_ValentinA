@@ -1,3 +1,8 @@
+"""
+Ce module fait toutes les conversions entre les différents systèmes de coordonnées
+This model deals with all the conversions between the different coordinates systems
+"""
+
 from pyproj import Transformer
 import numpy as np
 
@@ -5,14 +10,11 @@ import numpy as np
 #It is not include in the class of points because area is a concept that is used outside of points
 #And it seems more logical (for me) to put conversions for areas and points together
 
-#Caution, when it is UTM it is not real utm, because the reference position is (lat_min, lon_min)
-#It is way more practical to have a 0, as xmin for the creation of points
-
 #By convention depth is positive downward and altitude is positive upward
 
 class Conv :
 
-    def __init__(self, lat_min = None, lat_max = None, lon_min = None, lon_max = None, width_area = None, depth_area = None, accuracy = None):
+    def __init__(self, lat_min = None, lat_max = None, lon_min = None, lon_max = None, width_area = None, depth_area = None):
         self.transformer_lla2utm = Transformer.from_crs("EPSG:4326", "EPSG:26919")
         self.transformer_utm2lla = Transformer.from_crs("EPSG:26919", "EPSG:4326")
         self.transformer_lla2ecef = Transformer.from_crs('epsg:4326', 'epsg:4978')
@@ -24,8 +26,7 @@ class Conv :
             self.lon_max = lon_max
             self.xmin, self.ymin = self.transformer_lla2utm.transform(lat_min, lon_min)
             self.xmax, self.ymax = self.transformer_lla2utm.transform(lat_max, lon_max)
-            if not ((width_area is None) | (depth_area is None) | (accuracy is None)):
-                self.accuracy = accuracy
+            if not ((width_area is None) | (depth_area is None)):
                 self.width_area = width_area
                 self.depth_area = depth_area
                 self.n_areas_x, self.n_areas_y = np.ceil((self.xmax - self.xmin)/self.width_area).astype(int), np.ceil((self.ymax-self.ymin)/self.width_area).astype(int)
@@ -62,6 +63,7 @@ class Conv :
         return self.utm2lla(x, y)
     
     def area2perim_lla(self, area):
+        "GeoJson takes longitude then latitude and not the opposite"
         lat1, lon1 = self.area2lla((area[0]-0.5, area[1]-0.5))
         lat2, lon2 = self.area2lla((area[0]+0.5, area[1]-0.5))
         lat3, lon3 = self.area2lla((area[0]+0.5, area[1]+0.5))
@@ -78,7 +80,7 @@ class Conv :
         return self.in_area(x, y)
 
     def n_depth_area(self, depth):
-        return np.floor(depth/self.depth_area - 0.5).astype(int)
+        return 1 + np.floor(depth/self.depth_area - 0.5).astype(int)
 
     def depth_m2area(self, depth):
         return np.floor(depth/self.depth_area).astype(int)
@@ -87,7 +89,7 @@ class Conv :
         return (d+0.5)*self.depth_area
 
     def create_depthsb(self, dmax):
-        return np.arange(0.5, np.ceil(dmax/self.depth_area -0.5), 1) * self.depth_area
+        return np.arange(0.5, 1 + np.floor(dmax/self.depth_area - 0.5).astype(int), 1) * self.depth_area
 
     #Even though it's already implemented in other parts of the code, I put it here for clarity
     def lla2enu(self, lat, lon, alt=0):
