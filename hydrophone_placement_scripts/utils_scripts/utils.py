@@ -13,45 +13,45 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from hydrophone_placement_scripts.utils_scripts.class_points import Point # Only for typing
 
-def bin_inf(b1 : list[int] , b2 : list[int]):
-    assert len(b1) == len(b2), "two binaries do not have the same size"
-    for i in range (len(b1)):
-        if b1[i]<b2[i]:
-            return True
-        elif b1[i]>b2[i]:
-            return False
-    return True
+# def bin_inf(b1 : list[int] , b2 : list[int]):
+#     assert len(b1) == len(b2), "two binaries do not have the same size"
+#     for i in range (len(b1)):
+#         if b1[i]<b2[i]:
+#             return True
+#         elif b1[i]>b2[i]:
+#             return False
+#     return True
 
-def sort_insert_point (x : "Point", lx : list):
-    i = 0
-    bool = True
-    m = len(lx)
-    while (i<m) & bool:
-        if x.inf(lx[i]):
-            i+=1
-        else:
-            bool = False
-    lx.insert(i, x)
-    return None
+# def sort_insert_point (x : "Point", lx : list):
+#     i = 0
+#     bool = True
+#     m = len(lx)
+#     while (i<m) & bool:
+#         if x.inf(lx[i]):
+#             i+=1
+#         else:
+#             bool = False
+#     lx.insert(i, x)
+#     return None
 
-def bin2int (l : list):
-    puis = 1
-    n = 0
-    for i in range (len(l)):
-        n += l[-i-1] * puis
-        puis *= 2
-    return n
+# def bin2int (l : list):
+#     puis = 1
+#     n = 0
+#     for i in range (len(l)):
+#         n += l[-i-1] * puis
+#         puis *= 2
+#     return n
 
-def float2bin(x : float, n : int):
-    puis = 2 ** (n-1)
-    if (x // puis > 1) | (x < 0):
-        return []
-    l = [0] * n
-    for i in range (n):
-        l[i] = int(x // puis)
-        x = x % puis
-        puis /= 2
-    return l
+# def float2bin(x : float, n : int):
+#     puis = 2 ** (n-1)
+#     if (x // puis > 1) | (x < 0):
+#         return []
+#     l = [0] * n
+#     for i in range (n):
+#         l[i] = int(x // puis)
+#         x = x % puis
+#         puis /= 2
+#     return l
 
 def argmax (l : list):
     assert len(l)>0, "List cannot be empty"  

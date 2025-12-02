@@ -22,16 +22,16 @@ class Bayesian_Process:
     sigmaf = 1
     sigman = 0.1
 
-    def __init__(self, path : str = None, l_nbin_coords : list[float] | None = None, values : list[float] | None = None, expected_improvements : list[float] | None = None):
+    def __init__(self, path : str = None, l_nareas : list[list[tuple[int,int]]] | None = None, values : list[float] | None = None, expected_improvements : list[float] | None = None):
         self.path = path
-        if l_nbin_coords is None:
+        if l_nareas is None:
             self.iter = 0
             self.expected_improvements = []
             self.set_of_npointsbayesian = cls_points.Set_of_NPointsBayesian()
         else :
-            assert not values is None, "values is None while l_nbin_coords is not"
-            assert not expected_improvements is None, "expected_improvements is None while l_nbin_coords is not"
-            self.set_of_npointsbayesian = cls_points.Set_of_NPointsBayesian(l_nbin_coords=l_nbin_coords, values=values)
+            assert not values is None, "values is None while l_nareas is not"
+            assert not expected_improvements is None, "expected_improvements is None while l_nareas is not"
+            self.set_of_npointsbayesian = cls_points.Set_of_NPointsBayesian(l_nareas=l_nareas, values=values)
             self.expected_improvements = expected_improvements
             self.iter = len(values)
 
@@ -70,7 +70,7 @@ class Bayesian_Process:
             self.iter += 1
             self.set_of_npointsbayesian.add_npoint()
             with open(os.path.join(self.path, "model.pkl"), "wb") as f:
-                pickle.dump((self.set_of_npointsbayesian.l_nbin_coords_values(), self.expected_improvements), f)
+                pickle.dump((self.set_of_npointsbayesian.l_nareas_values(), self.expected_improvements), f)
         self.val_max = max(self.set_of_npointsbayesian.values)
         expected_improvement = abs(self.val_max) if self.expected_improvements == [] else self.expected_improvements[-1]
         while (self.iter<self.max_iter + self.n_first_points) & (expected_improvement/abs(self.val_max)>self.min_expected_improvement):
@@ -84,7 +84,7 @@ class Bayesian_Process:
             self.set_of_npointsbayesian.add_npoint(npoint_gauss)
             self.expected_improvements.append(expected_improvement)
             with open(os.path.join(self.path, "model.pkl"), "wb") as f:
-                pickle.dump((self.set_of_npointsbayesian.l_nbin_coords_values(), self.expected_improvements), f)
+                pickle.dump((self.set_of_npointsbayesian.l_nareas_values(), self.expected_improvements), f)
         print(expected_improvement, self.val_max)
         return self.best_npoint()
 
@@ -120,6 +120,6 @@ class Bayesian_Process:
 
 def load(path : str, **kwargs):
     with open(os.path.join(path, "model.pkl"), "rb") as f:
-        l_nbin_coords_values, expected_improvements = pickle.load(f)
-        l_nbin_coords, values = l_nbin_coords_values
-    return Bayesian_Process(path, l_nbin_coords, values, expected_improvements, **kwargs)
+        l_nareas_values, expected_improvements = pickle.load(f)
+        l_nareas, values = l_nareas_values
+    return Bayesian_Process(path, l_nareas, values, expected_improvements, **kwargs)

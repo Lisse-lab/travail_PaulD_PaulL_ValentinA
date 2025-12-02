@@ -564,14 +564,13 @@ class Calculator:
         env_acc = pm.create_env2d(**args)
         if env_acc['soundspeed'].shape[0] <= 3:
             env_acc['soundspeed'] = env_acc['soundspeed'][:,1].mean() #if there is still some issues with the shape of sound speed, a unique value of sound speed is given
-        i_soundspeed = np.floor(depthsb.max()/self.resol).astype(int)
         tlosses = pm.compute_transmission_loss(env_acc, mode='semicoherent')
         if tlosses is None:
-            env_acc["soundspeed"] = self.sound_speeds[:i_soundspeed, 1].mean()
+            env_acc["soundspeed"] = self.sound_speeds[:, 1].mean()
             tlosses = pm.compute_transmission_loss(env_acc, mode='semicoherent')
         if tlosses is None:
             return pd.DataFrame({})
-        sound_speed = (self.sound_speeds[i_soundspeed+1][1] -  self.sound_speeds[i_soundspeed+1][1]) / self.resol * (depthsb.max() - self.resol*i_soundspeed) + self.sound_speeds[i_soundspeed+1][1]
+        sound_speed = env_acc['soundspeed'][:,1].mean()
         tlosses_dB = -20 * ut.log10(np.abs(tlosses))
         for i, alpha_loss in enumerate(self.alpha(freq, depthsb.max(), sound_speed) * rx_ranges[:-1]):
             tlosses_dB[tlosses_dB.columns[i]] += alpha_loss
