@@ -24,14 +24,14 @@ import hydrophone_placement_scripts.to_optimise.func_to_optimise as f
 
 
 class Model:
-    def __init__(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, n_tetrahedras, load=False, version=None, new = False, **kwargs):
+    def __init__(self, lat_min : float, lat_max : float, lon_min : float, lon_max : float, width_area : float, depth_area : float, n_tetrahedras : int, load:bool=False, version:bool=None, new:bool=False, **kwargs):
         self.path = determine_path(n_tetrahedras, load, version)
         os.makedirs(os.path.join(os.path.dirname(__file__), "../datas/for_model"), exist_ok=True)
         
         if not new:
             new = self.compare_args(lat_min, lat_max, lon_min, lon_max, width_area, depth_area)
         self.converter = conv.Conv(lat_min, lat_max, lon_min, lon_max, width_area, depth_area)
-        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax)
+        cls_points.Point.update_point(self.converter.n_areas_x, self.converter.n_areas_y, self.converter.width_area)
         for attr, _ in kwargs.items():
             if not hasattr(f.Calculator, attr):
                 raise AttributeError(f"Calculator has no attribute '{attr}'.")
@@ -46,7 +46,7 @@ class Model:
         else:
             self.bayesian_process = bp.Bayesian_Process(self.path)
 
-    def compare_args(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area):
+    def compare_args(self, lat_min : float, lat_max : float, lon_min : float, lon_max : float, width_area : float, depth_area : float):
         news = [lat_min, lat_max, lon_min, lon_max, width_area, depth_area]
         if not "last_args.pkl" in os.listdir(os.path.join(os.path.dirname(__file__), "../datas/for_model")):
             new = True
@@ -56,7 +56,7 @@ class Model:
             new = (lasts != news)
         return new
 
-    def save_args(self, lat_min, lat_max, lon_min, lon_max, width_area, depth_area, kwargs):
+    def save_args(self, lat_min : float, lat_max : float, lon_min : float, lon_max : float, width_area : float, depth_area : float, kwargs):
         with open(os.path.join(os.path.dirname(__file__), "../datas/for_model/last_args.pkl"), "wb") as f:
             pickle.dump([lat_min, lat_max, lon_min, lon_max, width_area, depth_area], f)
         with open(os.path.join(self.path, "last_args.pkl"), "wb") as f:
@@ -103,7 +103,7 @@ class Model:
         plt.show()
         return None
 
-    def create_optimisation_history(self, show = False):
+    def create_optimisation_history(self, show : bool = False):
         # Récupère les données
         expected_improvements = self.bayesian_process.expected_improvements
         values = self.bayesian_process.set_of_npointsbayesian.values
@@ -269,7 +269,7 @@ class Model:
             self.calculator.save_error(self.path)
         return None
 
-    def create_hist_areas_according_error(self, n_bins = 100, max_y = None, show = False):
+    def create_hist_areas_according_error(self, n_bins : int = 100, max_y : float = None, show : bool = False):
         self.load_error()
         fig = go.Figure(data=[
             go.Histogram(x=self.calculator.df_areas["error"].dropna(), nbinsx=n_bins)
@@ -318,7 +318,7 @@ class Model:
                 ).add_to(map)
         return map
 
-def determine_path(n_tetrahedras, load, version = None):
+def determine_path(n_tetrahedras : int, load : bool, version : int | None = None):
     path_n = os.path.join(os.path.dirname(__file__), f"../results/{n_tetrahedras}_tetrahedras/")
     if version is None:
         os.makedirs(path_n, exist_ok=True)
@@ -337,7 +337,7 @@ def determine_path(n_tetrahedras, load, version = None):
         path = os.path.join(path_n, "V" + str(version))
     return path
 
-def load(n_tetrahedras, version = None, **kwargs):
+def load(n_tetrahedras : int, version : int | None = None, **kwargs):
     path = determine_path(n_tetrahedras, True, version)
     with open(os.path.join(path, "last_args.pkl"), "rb") as f:
         lat_min, lat_max, lon_min, lon_max, width_area, depth_area, old_kwargs = pickle.load(f)

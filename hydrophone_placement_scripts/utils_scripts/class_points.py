@@ -20,46 +20,60 @@ import numpy as np
 import random
 import hydrophone_placement_scripts.utils_scripts.utils as ut
 
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from  hydrophone_placement_scripts.to_optimise.topo import Topo# Only for typing
+from typing import Callable
+
 class Point:
-    xmin = 0
-    ymin = 0
-    xmax = 1
-    ymax = 1
-    lx = np.ceil(np.log2(1 + (xmax-xmin))).astype(int)
-    ly = np.ceil(np.log2(1 + (ymax-ymin))).astype(int)
-    dx = (xmax-xmin)/(2**lx-1)
-    dy = (ymax-ymin)/(2**ly-1)
-    params_cor = np.array([2, 2, 1/2/(40**2)]) #utils.esp_diff(xmax-xmin), 40 is an average 
+    # xmin = 0
+    # ymin = 0
+    # xmax = 1
+    # ymax = 1
+    # lx = np.ceil(np.log2(1 + (xmax-xmin))).astype(int)
+    # ly = np.ceil(np.log2(1 + (ymax-ymin))).astype(int)
+    # dx = (xmax-xmin)/(2**lx-1)
+    # dy = (ymax-ymin)/(2**ly-1)
+    # params_cor = np.array([2, 2, 1/2/(40**2)]) #utils.esp_diff(xmax-xmin), 40 is an average 
     topo = None
     height_sensor = None
     
     @classmethod
-    def update_point(cls, xmin, ymin, xmax, ymax):
-        cls.xmin = xmin
-        cls.ymin = ymin
-        cls.xmax = xmax
-        cls.ymax = ymax
-        cls.lx = np.ceil(np.log2(1 + (xmax-xmin))).astype(int)
-        cls.ly = np.ceil(np.log2(1 + (ymax-ymin))).astype(int)
-        cls.dx = (xmax - xmin)/(2**cls.lx-1)
-        cls.dy = (ymax - ymin)/(2**cls.ly-1)
-        cls.params_cor = np.array([2/((xmax - xmin)**2), 2/((ymax - ymin)**2), 1/2/(40**2)])
+    def update_point(cls, n_areas_x : int, n_areas_y : int, width_area : float):
+        cls.n_areas_x = n_areas_x
+        cls.n_areas_y = n_areas_y
+        cls.lx = np.ceil(np.log2(n_areas_x)).astype(int)
+        cls.ly = np.ceil(np.log2(n_areas_y)).astype(int)
+        cls.params_cor = np.array([2/((n_areas_x * width_area)**2), 2/((n_areas_y * width_area)**2), 1/2/(40**2)])
         return None
 
     @classmethod
-    def set_topo(cls, topo, height_sensor):
+    def set_topo(cls, topo : "Topo", height_sensor : float):
         cls.topo = topo
         cls.height_sensor = height_sensor
         return None
     
-    def __init__(self, bin_coords=None):
+    def __init__(self, bin_coords : list[int] | None = None):
         if bin_coords is None:
             bin_coords = [random.randint(0, 1) for _ in range(Point.lx + Point.ly)]
         else:
             assert len(bin_coords) == Point.lx + Point.ly, "bin_coords does not have the right size"
         self.bin_coords = bin_coords
-        self.coords = (self.xmin + ut.bin2int(self.bin_coords[0: Point.lx]) * self.dx, self.ymin + ut.bin2int(self.bin_coords[Point.lx: ])*self.dy)
+        self.area = (ut.bin2int(self.bin_coords[0: Point.lx]),  ut.bin2int(self.bin_coords[Point.lx: ]))
+        self.coords = self.topo.converter.area2utm(self.area)
     
+    def modif(self, type):
+        if type == 0:
+            self.area[0] += 1
+        elif type == 1:
+            self.area[0] -= 1
+        elif type == 2:
+            self.area[1] += 1
+        else :
+            self.area[1] -= 1
+        self.bin_coords = 
+
     def __repr__(self):
         return self.topo.converter.utm2lla(self.coords[0], self.coords[1]).__repr__()
 
@@ -67,25 +81,24 @@ class Point:
         return (self.depth()>0)
     
     def depth(self):
-        x, y = self.coords
-        return self.topo.dic_depths[self.topo.converter.utm2area(x,y)] - self.height_sensor
+        return self.topo.dic_depths.get(self.area, 0) - self.height_sensor
 
-    def dist_xy(self, x, y):
+    def dist_xy(self, x : float, y : float):
         return np.sqrt((self.coords[0] - x)**2 + (self.coords[1] - y)**2)
 
-    def dist_point_xy(self, other):
+    def dist_point_xy(self, other : "Point"):
         c = other.coords
         return self.dist_xy(c[0], c[1])
     
-    def dist_withdepth(self, x, y, d):
+    def dist_withdepth(self, x : float, y : float, d : float):
         return np.sqrt((self.coords[0] - x)**2 + (self.coords[1] - y)**2 + (self.depth() - d)**2)
 
-    def dist_point_withdepth(self, other):
+    def dist_point_withdepth(self, other : "Point"):
         c = other.coords
         d = other.depth()
         return self.dist_withdepth(c[0], c[1], d)
         
-    def norme(self, other):
+    def norme(self, other : "Point"):
         """
         Calcule la norme que l'on utilisera pour la corrélation dans l'algorithme bayesien
         Compute the norm that will be used for correlation in the Bayesian algorithm
@@ -94,16 +107,16 @@ class Point:
                 + self.params_cor[1] * ((abs(self.coords[1] - other.coords[1])) ** 2)
                 + self.params_cor[2] * ((abs(self.depth() - other.depth())) ** 2))
 
-    def inf(self, other):
+    def inf(self, other : "Point"):
         return ut.bin_inf(self.bin_coords, other.bin_coords)
             
-    def __eq__(self, other):
+    def __eq__(self, other : "Point"):
         return self.bin_coords == other.bin_coords
 
 class PointBayesian (Point):
-    max_compt = 1000
+    max_compt = 10000
 
-    def __init__(self, bin_coords = None):
+    def __init__(self, bin_coords : list[int] | None = None):
         if bin_coords is None:
             compt = 0
             super().__init__()
@@ -115,7 +128,7 @@ class PointBayesian (Point):
             super().__init__(bin_coords)
             assert self.in_water(), "the PointBayesian is not bayesian"
         
-    def create_random_point(self, range):
+    def create_random_point(self, range : float):
         """
         Utile pour create_new_pointbayesian pour créer des cooordonnées qui sont dans la zone à une distance inférieure de range au Point
         Useful for create_new_pointbayesian to generate coordinates that lie within the area at a distance smaller than range from the Point
@@ -123,20 +136,18 @@ class PointBayesian (Point):
         compt = 0
         d = np.sqrt(random.uniform(0, (2*range)**2))
         theta = random.uniform(0, 2*np.pi)
-        x = np.round((d * np.cos(theta) + self.coords[0] - self.xmin)/self.dx)
-        y = np.round((d * np.sin(theta) + self.coords[1] - self.ymin)/self.dy)
+        x, y = self.topo.converter.utm2area(d * np.cos(theta) + self.coords[0], d * np.sin(theta) + self.coords[1])
         bin_coords = ut.float2bin(x, self.lx) + ut.float2bin(y, self.ly)
         while len(bin_coords) != self.lx + self.ly:
             compt +=1
             assert compt < PointBayesian.max_compt, "too many attempts to create a new point in the area"
             d = np.sqrt(random.uniform(0, (2*range)**2))
             theta = random.uniform(0, 2*np.pi)
-            x = np.round((d * np.cos(theta) + self.coords[0] - self.xmin)/self.dx)
-            y = np.round((d * np.sin(theta) + self.coords[1] - self.ymin)/self.dy)
+            x, y = self.topo.converter.utm2area(d * np.cos(theta) + self.coords[0], d * np.sin(theta) + self.coords[1])
             bin_coords = ut.float2bin(x, self.lx) + ut.float2bin(y, self.ly)
         return bin_coords
     
-    def create_new_pointbayesian(self, range):
+    def create_new_pointbayesian(self, range : float):
         """
         Crée un Point Bayesien a proximité, pour s'assurer que les points ne soient pas isolés
         Create a nearby Bayesian Point to ensure that the points are not isolated
@@ -152,14 +163,14 @@ class PointBayesian (Point):
 
 class PointGenetic (Point):
 
-    def __init__(self, bin_coords = None):
+    def __init__(self, bin_coords : list[int] | None = None):
         super().__init__(bin_coords)
         
 class NPoint :
     n_tetrahedras = 2
     range = np.inf
 
-    def __init__(self, points=None, nbin_coords=None): #nbin_coords is a list and not a matrix !!! 
+    def __init__(self, points : list[Point] | None = None, nbin_coords : list[int] | None = None): #nbin_coords is a list and not a matrix !!! 
         if points is None:
             self.points = []
             if nbin_coords is None:
@@ -174,11 +185,11 @@ class NPoint :
             self.points = points
 
     @classmethod
-    def set_n_tetrahedras(cls, n_tetrahedras):
+    def set_n_tetrahedras(cls, n_tetrahedras : int):
         cls.n_tetrahedras = n_tetrahedras
 
     @classmethod
-    def set_range(cls, range):
+    def set_range(cls, range : float):
         cls.range = range
 
     def __repr__(self):
@@ -196,7 +207,7 @@ class NPoint :
             nbin_coords += self.points[i].bin_coords
         return nbin_coords
 
-    def corr(self, other):
+    def corr(self, other : "NPoint"):
         """
         Calcule la corrélation utilisée dans l'algorithme Bayesien entre le NPoint et un autre NPoint
         Computes the correlation used in the Bayesian algorithm between the NPoint and another NPoint
@@ -204,10 +215,11 @@ class NPoint :
         e1 = self.points
         e2 = other.points
         assert len(e1) == len(e2), "e1 and e2 do not have the same size"
-        s = 0
-        for i in range (NPoint.n_tetrahedras):
-            s += e1[i].norme(e2[i])
-        return np.exp(-1/2 * s)
+        mat = np.zeros((len(e1), len(e2)))
+        for i in range (len(e1)):
+            for j in range (len(2)):
+                mat[i,j] = e1[i].norme(e2[j])
+        return np.exp(-1/2 * mat.sum(axis = 0).min())
 
     def in_water(self):
         for point in self.points:
@@ -229,14 +241,14 @@ class NPoint :
         return t.all()
 
     @classmethod
-    def set_value(cls, value):
+    def set_value(cls, value : Callable[["NPoint"], float]):
         cls.value = lambda self : value(self)
         return None
         
-    def __eq__(self, other):
+    def __eq__(self, other : "NPoint"):
         return self.points == other.points
 
-    def is_in(self, set_of_npoints):
+    def is_in(self, set_of_npoints : "Set_Of_NPoints"):
         """
         Pour savoir si un NPoint est dans un set_of_npoints
         To know if a NPoint is in a set_of_npoints or not"""
@@ -247,7 +259,7 @@ class NPoint :
 
 class NPointBayesian (NPoint):
 
-    def __init__(self, points = None, nbin_coords=None):
+    def __init__(self, points : list[Point] | None = None, nbin_coords : list[int] | None = None):
         assert self.n_tetrahedras > 1, "the number of sensors must be at least 2"
         if points is None:
             points = []
@@ -291,7 +303,7 @@ class NPointBayesian (NPoint):
 
 class NPointGenetic (NPoint):
 
-    def __init__(self, points = None, nbin_coords=None):
+    def __init__(self, points : list[Point] | None = None, nbin_coords : list[int] | None = None):
         if points is None:
             points = []
             if nbin_coords is None:
@@ -309,17 +321,16 @@ class NPointGenetic (NPoint):
             super()._init(points = points)
 
     @classmethod
-    def set_p_mut(cls, p_mut):
+    def set_p_mut(cls, p_mut : float):
         cls.p_mut = p_mut
         return None
         
-    def breed(self, other, ks):
+    def breed(self, other : "NPointGenetic", ks : list[int]):
         """
         Pour créer un nouveau NPoint à partir de deux parents
         To create a new NPoint thanks to two parents
         """
-        b1 = self.nbin_coords()
-        b2 = other.nbin_coords()
+        
         p_mut = self.p_mut
         assert len(b1) == len(b2), "the two nbin_coords of the parents do not have the same size"
         new_nbin_coords = [0] * len(b1)
@@ -333,7 +344,7 @@ class NPointGenetic (NPoint):
                 new_nbin_coords[i] = b2[i] if random.random()>p_mut else 1-b2[i]
         return NPointGenetic(nbin_coords = new_nbin_coords)
 
-    def corr(self, other):
+    def corr(self, other : "NPoint"):
         """
         Calcule la corrélation entre deux NPoints pour après la mettre dans la matrice de covariance
         Computes the correlation between two NPoints to then place it in the covariance matrix
@@ -354,7 +365,7 @@ class NPointGenetic (NPoint):
 
 class Set_Of_NPoints:
 
-    def __init__(self, set_of_npoints = None, values = None, size = 0, l_nbin_coords = None):
+    def __init__(self, set_of_npoints : list[NPoint] | None = None , values : list[float] | None = None, size : int = 0, l_nbin_coords : list[float] | None = None):
         if set_of_npoints is None:
             set_of_npoints = []
             if l_nbin_coords is None:
@@ -374,7 +385,7 @@ class Set_Of_NPoints:
     def __repr__(self):
         return self.set_of_npoints.__repr__()
 
-    def add_npoint(self, npoint, value = None):
+    def add_npoint(self, npoint : NPoint, value: float | None = None):
         if npoint is None:
             npoint = NPoint()
         self.set_of_npoints.append(npoint)
@@ -392,7 +403,7 @@ class Set_Of_NPoints:
         arg = ut.argmin(self.values)
         return arg
 
-    def k_best(self, k):
+    def k_best(self, k : int):
         l = ut.k_best(self.values, k)
         return self.__class__(set_of_npoints = [self.set_of_npoints[i] for i in l])
 
@@ -412,7 +423,7 @@ class Set_Of_NPoints:
 class Set_of_NPointsBayesian (Set_Of_NPoints):
     max_compt = 5
 
-    def __init__(self, set_of_npoints = None, values = None, size = 0, l_nbin_coords = None):
+    def __init__(self, set_of_npoints : list[NPoint] | None = None , values : list[float] | None = None, size : int = 0, l_nbin_coords : list[float] | None = None):
         super().__init__()
         if set_of_npoints is None:
             if l_nbin_coords is None:
@@ -438,7 +449,7 @@ class Set_of_NPointsBayesian (Set_Of_NPoints):
                     self.add_npoint(npoint, value = v)
 
 
-    def add_npoint(self, npoint = None, value =  None):
+    def add_npoint(self, npoint : NPoint | None = None, value : float | None =  None):
         if npoint is None:
             npoint = NPointBayesian()
             compt = 0
@@ -455,7 +466,7 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
     max_compt_parents = 100
     max_compt_ks = 10
 
-    def __init__(self, set_of_npoints = None, values = None, size = 0, l_nbin_coords = None):
+    def __init__(self, set_of_npoints : list[NPoint] | None = None , values : list[float] | None = None, size : int = 0, l_nbin_coords : list[float] | None = None):
         if set_of_npoints is None:
             set_of_npoints = []
             if l_nbin_coords is None:
@@ -469,21 +480,21 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
                 assert isinstance(npoint, NPointGenetic), "one npoint is not a genetic one"
         super().__init__(set_of_npoints = set_of_npoints, values = values)
 
-    def add_npoint(self, npoint, value = None):   
+    def add_npoint(self, npoint : NPoint | None = None, value : float | None = None):   
         if npoint is None:
             npoint = NPointGenetic()         
         assert isinstance(npoint, NPointGenetic), "the new npoint is not Genetic"
         return super().add_npoint(npoint, value)
 
-    def k_best(self, k):
+    def k_best(self, k : int):
         return super().k_best(k)
     
     @classmethod
-    def set_probs_n_sep(cls, probs, n_sep):
+    def set_probs_n_sep(cls, probs : list[float], n_sep : int):
         cls.probs = probs
         cls.n_sep = n_sep
 
-    def breed(self, set_of_parents):
+    def breed(self, set_of_parents : "Set_of_NPointsGenetic"):
         """
         Pour créer un nouvel set_of_individuals à partir d'un set_of_parents
         To create a new set_of_individuals thanks to a set_of_parents
@@ -499,11 +510,11 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
         ks = []
         for _ in range (self.n_sep):
             compt = 0
-            k = random.randint(0, NPoint.n_tetrahedras * (Point.lx + Point.ly) - 1)
+            k = random.randint(0, NPoint.n_tetrahedras)
             while k in ks:
                 assert compt < Set_of_NPointsGenetic.max_compt_ks, "too many attemps to get the ks"
                 compt +=1
-                k = random.randint(0, NPoint.n_tetrahedras * (Point.lx + Point.ly) - 1)      
+                k = random.randint(0, NPoint.n_tetrahedras)      
                 ks.append(k)
         ks.sort()
         self.add_npoint(set_of_parents.set_of_npoints[i_par1].breed(set_of_parents.set_of_npoints[i_par2], ks))

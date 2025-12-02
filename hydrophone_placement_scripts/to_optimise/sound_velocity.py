@@ -5,7 +5,7 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 
-def get_model(depths, sound_velocities, n):
+def get_model(depths : np.ndarray, sound_velocities : np.ndarray, n : int):
     poly = PolynomialFeatures(degree=n)
     d_poly = poly.fit_transform(depths.reshape(-1,1))
     model = LinearRegression()
@@ -13,7 +13,7 @@ def get_model(depths, sound_velocities, n):
     y_pred = model.predict(d_poly)
     return (r2_score(sound_velocities, y_pred), model)
 
-def get_sound_velocities(file, depth_const = 17, depth_max=100, deg_max=20, display=False, resol = 1):
+def get_sound_velocities(file : str, depth_const : float = 17, depth_max : float = 100, deg_max : int = 20, display : bool =False, resol : float = 1):
     df = pd.read_csv(file)
     df2 = df[df["Depth"] <=depth_const] #after this depth we will consider the sound velocity as constant
     depths = df2["Depth"].values.reshape(-1,1)
@@ -39,7 +39,7 @@ def get_sound_velocities(file, depth_const = 17, depth_max=100, deg_max=20, disp
         disp(depths, sound_velocities, d, sv, k, r2) #r2 is only for the first part which is in the regression
     return [[d[i], sv[i]] for i in range(len(d))][::resol]
 
-def disp(depths, sound_velocities, d, sv, k, r2):
+def disp(depths : np.ndarray, sound_velocities : np.ndarray, d : np.ndarray, sv : np.ndarray, k : int, r2 : float):
     plt.scatter(sound_velocities, -depths, color='blue', label='Real Data')
     plt.plot(sv, -d, color='red', label='Polynomial regression')
     plt.xlabel('Sound velocity (m/s)')

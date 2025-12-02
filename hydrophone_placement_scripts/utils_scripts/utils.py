@@ -8,7 +8,12 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 
-def bin_inf(b1 , b2):
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from hydrophone_placement_scripts.utils_scripts.class_points import Point # Only for typing
+
+def bin_inf(b1 : list[int] , b2 : list[int]):
     assert len(b1) == len(b2), "two binaries do not have the same size"
     for i in range (len(b1)):
         if b1[i]<b2[i]:
@@ -17,7 +22,7 @@ def bin_inf(b1 , b2):
             return False
     return True
 
-def sort_insert_point (x, lx):
+def sort_insert_point (x : "Point", lx : list):
     i = 0
     bool = True
     m = len(lx)
@@ -29,7 +34,7 @@ def sort_insert_point (x, lx):
     lx.insert(i, x)
     return None
 
-def bin2int (l):
+def bin2int (l : list):
     puis = 1
     n = 0
     for i in range (len(l)):
@@ -37,7 +42,7 @@ def bin2int (l):
         puis *= 2
     return n
 
-def float2bin(x, n):
+def float2bin(x : float, n : int):
     puis = 2 ** (n-1)
     if (x // puis > 1) | (x < 0):
         return []
@@ -48,7 +53,7 @@ def float2bin(x, n):
         puis /= 2
     return l
 
-def argmax (l):
+def argmax (l : list):
     assert len(l)>0, "List cannot be empty"  
     m = l[0]
     ind = 0
@@ -58,7 +63,7 @@ def argmax (l):
             ind = i
     return ind
 
-def k_best(l, k):
+def k_best(l : list, k : int):
     if k == 1:
         return [argmax(l)]
     else:
@@ -69,7 +74,7 @@ def k_best(l, k):
                 l2[j] += 1
         return [i] + l2
     
-def argmin (l):
+def argmin (l : list):
     assert len(l)>0, "List cannot be empty"  
     m = l[0]
     ind = 0
@@ -79,7 +84,7 @@ def argmin (l):
             ind = i
     return ind 
 
-def dms_to_dd (dms) :
+def dms_to_dd (dms : str) :
     dir = dms[-1]
     d, m, s = dms[:-1].split("-")
     dd = float(d) + float(m)/60 + float(s)/3600
@@ -87,7 +92,7 @@ def dms_to_dd (dms) :
         dd *= -1
     return dd
 
-def sort_insert_p_dist(x, lx, diff):
+def sort_insert_p_dist(x, lx : list, diff : float):
     """
     To insert an element x in a sorted list lx, while all the elements in the list must be different by at least diff.
     x and the elements of lx must be tuples and sorted by the second value
@@ -108,7 +113,7 @@ def sort_insert_p_dist(x, lx, diff):
         return None
     return None
 
-def sort_max_angle(l):
+def sort_max_angle(l : list[tuple[float, float]]):
     l_angles = [np.arctan2(e[1], e[0]) for e in l]
     sorted_indices = sorted(range(len(l_angles)), key=lambda k: l_angles[k])
     l_angles2 = [l_angles[i] for i in sorted_indices]
@@ -117,7 +122,7 @@ def sort_max_angle(l):
         l_diff.append(t2-t1)
     return np.max(l_diff),[l[i] for i in sorted_indices]
 
-def modif_area_q(area, areat, q):
+def modif_area_q(area : tuple[int, int], areat : tuple[int, int], q : int):
     if q == 0:
         return area[0] + areat[0], area[1] + areat[1]
     elif q == 1:
@@ -145,16 +150,16 @@ def sort_insert_depth(x, lx):
         return True
     return False"""
 
-def log(x):
+def log(x : float):
     return np.log(np.finfo(float).eps + x)
 
-def log10(x):
+def log10(x : float):
     return np.log10(np.finfo(float).eps + x)
     
-def fun_rep_norm(x, mean, stddev):
+def fun_rep_norm(x : float, mean : float, stddev : float):
     return 1/2 * (1+math.erf((x-mean)/(stddev*np.sqrt(2))))
 
-def comb(i, j, area):
+def comb(i : int, j : int, area : tuple[int, int]):
     if (i == 0): #if i == 0 then j == 0 in our case
         return [area]
     elif (j == 0) | (i == j):
@@ -162,7 +167,7 @@ def comb(i, j, area):
     else:
         return [(area[0] + i, area[1] + j), (area[0] + j, area[1] + i), (area[0] - i, area[1] + j), (area[0] + j, area[1] - i), (area[0] + i, area[1] - j), (area[0] - j, area[1] + i), (area[0] - i,area[1] -j), (area[0] - j, area[1] - i)]
 
-def norme(x, y):
+def norme(x : float, y : float):
     return np.sqrt(x**2+y**2)
 
 """def get_points_to_calculate(angle_max, points_tried, angles_diff, dic_to_calc, mat_which_value):

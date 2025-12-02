@@ -128,7 +128,7 @@ class forecasting_model :
             self.df_areas["RMSE"] = np.sqrt(self.df_areas["MSE"])
         return self.df_areas["RMSE"]
 
-    def create_errors_map(self, with_alpha = False, min_alpha = 0.3):
+    def create_errors_map(self, with_alpha = False, min_alpha = 0.5):
         self.get_rmse()
         df = self.df_areas[self.df_areas["number_test"] > 0]
         map = folium.Map(location=[(self.converter.lat_min + self.converter.lat_max)/2, (self.converter.lon_min + self.converter.lon_max)/2], zoom_start=11)
@@ -193,10 +193,10 @@ class ou_model (forecasting_model):
                     offset = 1
                     deltat = self.df_test["Time"].loc[l[1]] - self.df_test["Time"].loc[l[0]]
                     traj = ou.ou_forecast_trajectory(self.df_test["x"].loc[l[1]], self.df_test["y"].loc[l[1]], (self.df_test["x"].loc[l[1]] - self.df_test["x"].loc[l[0]])/deltat, (self.df_test["y"].loc[l[1]]-self.df_test["y"].loc[l[0]])/deltat, self.inv_tau0, 0, self.calc_mu, lambda x : None, False)
-            for i in range (l[0] + offset, l[-1]):
-                deltat = self.df_test["Time"].loc[i+1] - self.df_test["Time"].loc[i]
-                _, err_v = traj.err_set(deltat, np.array([self.df_test["x"].loc[i+1], self.df_test["y"].loc[i+1]]))          
-                self.df_test.loc[i, "SE"] = err_v
+                    for i in range (l[0] + offset, l[-1]):
+                        deltat = self.df_test["Time"].loc[i+1] - self.df_test["Time"].loc[i]
+                        _, err_v = traj.err_set(deltat, np.array([self.df_test["x"].loc[i+1], self.df_test["y"].loc[i+1]]))          
+                        self.df_test.loc[i, "SE"] = err_v
         return self.df_test["SE"].mean()
 
     def create_df_areas(self, df_areas=None):
@@ -272,7 +272,7 @@ class gaussian_model (forecasting_model):
     n_try = 5
     seed = 73
 
-    def __init__(self, df_train, converter, mean, beluga_features, categories=None, position=True, **kwargs):
+    def __init__(self, df_train, converter, beluga_features, mean=False, categories=False, position=True, **kwargs):
         self.title = "gaussian"
         for attr, value in kwargs.items():
             if not hasattr(self, attr):
@@ -280,9 +280,6 @@ class gaussian_model (forecasting_model):
             else:
                 setattr(self, attr, value)
         super().__init__(df_train, converter, True)
-        if mean :
-            self.title += "_mean"
-            self.fill_mean_train()
         if position:
             self.title += "_position"
             self.features = ["x", "y", "depth"]
@@ -295,6 +292,9 @@ class gaussian_model (forecasting_model):
         self.beluga_features = beluga_features
         if beluga_features:
             self.title += "_beluga_features"
+            if mean :
+                self.title += "_mean"
+                self.fill_mean_train()
             if categories:
                 self.title += "_cat"
                 self.fill_categories_train()
@@ -320,9 +320,9 @@ class gaussian_model (forecasting_model):
         meanings = ["Sigma", "Sigmaf"] + self.meanings
         plt.figure(figsize=(8, 5))
         plt.bar(meanings, [e.item() for e in params])
-        plt.title("Optimised weight values for " + self.title)
-        plt.ylabel("Weight values")
-        plt.xlabel("Weight")
+        plt.title("Poids optimisés pour " + self.title)
+        plt.ylabel("Valeur du poid")
+        plt.xlabel("Poids")
         plt.xticks(rotation=45, ha='right')
         plt.show()
         return None
@@ -473,9 +473,9 @@ class gaussian_model (forecasting_model):
         meanings = ["Sigma", "Sigmaf"] + self.meanings
         plt.figure(figsize=(8, 5))
         plt.bar(meanings, self.np_params[self.selected_ind].std(axis = 0))
-        plt.title("Std optimised weight values for "  + self.title)
+        plt.title("Std des valeurs des poids pour "  + self.title)
         plt.ylabel("Stds")
-        plt.xlabel("Weight")
+        plt.xlabel("Poids")
         plt.xticks(rotation=45, ha='right')
         plt.show()
         return None
@@ -549,7 +549,7 @@ class random_forest (forecasting_model):
         importances = self.regr.feature_importances_
         feature_names = self.features
         plt.figure(figsize=(10, 6))
-        plt.title("Importance des variables (Random Forest) for " + self.title)
+        plt.title("Importance des variables for " + self.title)
         plt.bar(range(len(feature_names)), importances, align="center")
         plt.xticks(range(len(feature_names)), feature_names, rotation=90)
         plt.tight_layout()
@@ -581,7 +581,6 @@ if __name__ == "__main__":
         "lon_max" : -69.28,
         "width_area" : 1000,
         "depth_area" : 2,
-        "accuracy" : 1,
     }
     geotiff_path = os.path.join(os.path.dirname(__file__), "../datas/BelugaRelativeDens/BelugaRelativeDens.tif")
     step = 100
@@ -617,6 +616,7 @@ if __name__ == "__main__":
     mod_pers = pers_model(pd.DataFrame({col:[] for col in df_reg_trajs.columns}), converter)
     mod_pers.test(df_reg_trajs)
     df_reg_trajs[mod_pers.title] = mod_pers.get_rmse()
+    mod_pers.create_errors_map(True)
     mod_pers.df_areas.rename(columns = {"RMSE" : "forecasting_error"}, inplace = True)
     known_points = mod_pers.df_areas.dropna(subset=["forecasting_error"])[["x", "y"]].values
     known_values = mod_pers.df_areas.dropna(subset=["forecasting_error"])["forecasting_error"].values

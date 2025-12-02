@@ -8,6 +8,12 @@ import hydrophone_placement_scripts.utils_scripts.utils as ut
 import hydrophone_placement_scripts.utils_scripts.class_points as cls_points
 import hydrophone_placement_scripts.optimisation.genetic_algo as ga
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from hydrophone_placement_scripts.utils_scripts.conversions_coordinates import Conv # Only for typing
+    from hydrophone_placement_scripts.to_optimise.func_to_optimise import Calculator
+    from hydrophone_placement_scripts.utils_scripts.class_points import NPoint
+
 class Bayesian_Process:
     n_first_points = 50
     min_expected_improvement = 0.001
@@ -16,7 +22,7 @@ class Bayesian_Process:
     sigmaf = 1
     sigman = 0.1
 
-    def __init__(self, path = None, l_nbin_coords = None, values = None, expected_improvements = None):
+    def __init__(self, path : str = None, l_nbin_coords : list[float] | None = None, values : list[float] | None = None, expected_improvements : list[float] | None = None):
         self.path = path
         if l_nbin_coords is None:
             self.iter = 0
@@ -44,7 +50,7 @@ class Bayesian_Process:
     def update_mu(self):
         self.mu = (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@self.set_of_npointsbayesian.values)[0,0] / (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@np.ones(self.set_of_npointsbayesian.size))[0,0]
         
-    def neg_log_likelihood(self, params):
+    def neg_log_likelihood(self, params : list[float]):
         cls_points.Point.params_cor = params[2:]
         self.sigmaf = params[0]
         self.sigman = params[1]
@@ -59,7 +65,7 @@ class Bayesian_Process:
         result = optimize.minimize(self.neg_log_likelihood, params, method="Nelder-Mead", bounds = bounds, options={"disp" : True, "maxiter" : 1200})
         self.neg_log_likelihood(result.x)        
     
-    def find_max(self, converter, calculator):
+    def find_max(self, converter : "Conv", calculator : "Calculator"):
         while self.iter < self.n_first_points:
             self.iter += 1
             self.set_of_npointsbayesian.add_npoint()
@@ -91,7 +97,7 @@ class Bayesian_Process:
     def best_iteration(self):
         return 1 + self.set_of_npointsbayesian.argmax()
 
-    def esp_improv(self, npoint):
+    def esp_improv(self, npoint : "NPoint"):
         if npoint.is_in(self.set_of_npointsbayesian):
             return 0
         elif npoint.in_water() & npoint.verify_range():
@@ -112,7 +118,7 @@ class Bayesian_Process:
             l.append(m)
         return l
 
-def load(path, **kwargs):
+def load(path : str, **kwargs):
     with open(os.path.join(path, "model.pkl"), "rb") as f:
         l_nbin_coords_values, expected_improvements = pickle.load(f)
         l_nbin_coords, values = l_nbin_coords_values

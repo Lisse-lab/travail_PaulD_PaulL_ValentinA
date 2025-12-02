@@ -17,20 +17,23 @@ if __name__ == "__main__":
     sys.path.append(os.path.join(os.path.dirname(__file__), "../.."))
     import hydrophone_placement_scripts.utils_scripts.conversions_coordinates as conv
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from  hydrophone_placement_scripts.utils_scripts.conversions_coordinates import Conv # Only for typing
 
 import hydrophone_placement_scripts.utils_scripts.utils as ut
 
 class Topo:
     path = os.path.join(os.path.dirname(__file__), "../datas/")
 
-    def __init__(self, converter, new_dic_depths = False, new_dic_substrats = False, substrat = True, save = True):
+    def __init__(self, converter : "Conv", new_dic_depths: bool = False, new_dic_substrats : bool = False, substrat : bool = True, save : bool = True):
         self.converter = converter
         self.save = save
         self.create_dic_depths(new_dic_depths)
         if substrat:
             self.create_dic_substrats(new_dic_substrats)
 
-    def create_dic_depths(self, new=False):
+    def create_dic_depths(self, new : bool = False):
         if (not new) & ("dic_depths.pkl" in os.listdir(os.path.join(self.path, "for_model"))):
             with open(os.path.join(self.path, "for_model", "dic_depths.pkl"), "rb") as f:
                 dic_depths = pickle.load(f)
@@ -62,7 +65,7 @@ class Topo:
         self.dic_depths = dic_depths    
         return None
     
-    def create_dic_substrats(self, new=False):
+    def create_dic_substrats(self, new : bool = False):
         if (not new) & ("dic_substrats.pkl" in os.listdir(os.path.join(self.path, "for_model"))):
             with open(os.path.join(self.path, "for_model", "dic_substrats.pkl"), "rb") as f:
                 dic_substrats = pickle.load(f)
@@ -86,7 +89,7 @@ class Topo:
             print("dic_substrats created")
         return None
 
-    def depths_and_substrat(self, l_depths):
+    def depths_and_substrat(self, l_depths : list[float, list[tuple[int, int]]]):
         depths = []
         substrat = np.array([0.,0.,0.])
         compt = 0

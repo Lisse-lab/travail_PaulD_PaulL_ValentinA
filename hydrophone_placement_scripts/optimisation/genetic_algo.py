@@ -7,12 +7,18 @@ from plotly.subplots import make_subplots
 
 import hydrophone_placement_scripts.utils_scripts.class_points as cls_points
 
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from hydrophone_placement_scripts.utils_scripts.conversions_coordinates import Conv # Only for typing
+    from hydrophone_placement_scripts.to_optimise.func_to_optimise import Calculator
+    from hydrophone_placement_scripts.utils_scripts.class_points import NPoint
+from typing import Callable
+
 class Genetic_Algo:
     n_individuals = 20
     n_parents = 10
     C_prob = 1.9
-    n_sep = 4
-    p_mut = 0.01
+    #p_mut = 0.01
     n_run = 20
     max_iter = 200
     n_improvements = 20
@@ -21,7 +27,7 @@ class Genetic_Algo:
 
     probs = None
     
-    def __init__(self, id, converter, calculator, n_tetrahedras, range, esp_improv, path, **kwargs_ga):
+    def __init__(self, id : int, converter : "Conv", calculator : "Calculator", n_tetrahedras : int, range : float, esp_improv : Callable[["NPoint"], float], path : str, n_sep : int, **kwargs_ga):
         for attr, value in kwargs_ga.items():
             if not hasattr(self, attr):
                 raise AttributeError(f"Genetic_Algo has no attribute '{attr}'.")
@@ -31,6 +37,7 @@ class Genetic_Algo:
         self.n_tetrahedras = n_tetrahedras
         self.range = range
         self.esp_improv = esp_improv
+        self.n_sep = n_sep
         self.calculate_probs()
         self.set_of_best = cls_points.Set_of_NPointsGenetic()
         self.path = os.path.join(path, f"Runs/Iteration_{id}")
@@ -58,14 +65,14 @@ class Genetic_Algo:
         arg = self.set_of_best.argmax()
         return (self.set_of_best.set_of_npoints[arg], self.set_of_best.values[arg])
 
-    def find_max_run(self, args):
+    def find_max_run(self, args : tuple[str, str]):
         run = Run(args)
         return run.find_max()
     
     def init_worker(self):
         cls_points.NPoint.set_n_tetrahedras(self.n_tetrahedras)
         self.set_probs()
-        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax)
+        cls_points.Point.update_point(self.converter.n_areas_x, self.converter.n_areas_y, self.converter.width_area)
         cls_points.NPoint.set_range(self.range)
         cls_points.NPointGenetic.set_value(self.esp_improv)
         cls_points.Point.set_topo(self.calculator.topo, self.calculator.height_sensor)
@@ -76,7 +83,7 @@ class Genetic_Algo:
 
 class Run:
 
-    def __init__(self, args):
+    def __init__(self, args : tuple[str,str]):
         self.max = None
         self.val_max = None
         self.individuals = cls_points.Set_of_NPointsGenetic(size = self.n_individuals)
@@ -131,7 +138,7 @@ class Run:
         plt.show()
         return None
 
-    def display_plotly(self, max_lim = None):
+    def display_plotly(self, max_lim : float | None = None):
         fig = go.Figure()
         fig = make_subplots(specs=[[{"secondary_y": True}]])
         # Ajout des courbes
@@ -164,12 +171,12 @@ class Run:
         
         return fig
 
-def load_run(file):
+def load_run(file : str):
     with open(file, "rb") as f:
         run = pickle.load(f)
     return run
 
-def load_runs(path, iteration):
+def load_runs(path : str, iteration : int):
     l_runs = []
     for file in os.listdir(os.path.join(path, f"Runs/Iteration_{iteration}")):
         l_runs.append(load_run(os.path.join(path, f"Runs/Iteration_{iteration}", file)))

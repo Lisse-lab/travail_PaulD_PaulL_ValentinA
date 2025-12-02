@@ -7,7 +7,7 @@ import numpy as np
 import os
 import arlpy.uwapm as pm
 import geopandas as gpd
-from shapely.geometry import Polygon, Point
+from shapely.geometry import Polygon, Point, Linestring
 from shapely import wkt
 from multiprocessing import Pool, cpu_count
 import sys
@@ -17,6 +17,10 @@ import hydrophone_placement_scripts.utils_scripts.class_points as cls_points
 from . import topo
 from . import sound_velocity
 
+from typing import TYPE_CHECKING, Any
+if TYPE_CHECKING:
+    from hydrophone_placement_scripts.utils_scripts.conversions_coordinates import Conv # Only for typing
+
 from hydrophone_placement_scripts.coords_belugas.calc_mu import Calc_mu
 
 from beluga_watch.src.tests.ziv_zakai import load_noises, spectral_power
@@ -25,44 +29,47 @@ from beluga_watch.src.location_bricks.tdoa_brick import crb_from_pair
 from beluga_watch.src.location_bricks.low_level_fusion import pos_crb_matrix, weight_matrices
 
 class Calculator:
+    
+    l_fcs = [4000]
+    l_freqs_range=[(3700, 4300)]
+    boat_freqs = [500]
+    l_boat_freqs_range = [(490, 510)]
+    source_level_beluga = 143.8 #dB
+    boat_noise = 160
+    noise_threshold = 50
+    gain = 5
+    n_parts = 64
+    weights = {"density" : True, "navigation" : True, "forecasting error" : False}
+    err_max = 5000
+
+    snr_min_dB = 0
+    noises = None
+    noises_for_nav = None
+    mult_range = 1.25
+    n_calc_ranges = 30
+    range_ultra_max = 50000
+    n_processes = cpu_count() - 1 if cpu_count()>1 else 1
+    #Path of files
+    traversier_path = os.path.join(os.path.dirname(__file__), "../datas/route_traversier/Scénarios_routes.shp")
+    noises_folder= os.path.join(os.path.dirname(__file__), "../../beluga_watch/noises")
+    geotiff_path = os.path.join(os.path.dirname(__file__), "../datas/BelugaRelativeDens/BelugaRelativeDens.tif")
+    path = os.path.join(os.path.dirname(__file__), "../datas/for_model")
+    sound_velocity_path = os.path.join(os.path.dirname(__file__), "../datas/sound_velocity_new.csv")
+    resol_sound_speed=2
+    #For alpha, transmission loss
+    ph = 8
+    temperature = 3
+    salinity = 30
+    #Hydrophones
     system_sensitivity = -165.2
     audio_system_gain = 32768.0 
     sample_rate = 384000
     estimated_tdoa_std = (1. / sample_rate) / np.sqrt(12.)
-    source_level_beluga = 143.8 #dB
-    ph = 8
-    temperature = 3
-    salinity = 30
-    traversier_path = os.path.join(os.path.dirname(__file__), "../datas/route_traversier/Scénarios_routes.shp")
-    boat_noise = 160
-    noise_threshold = 50
-    gain = 5
-    boat_freqs = [500]
-    l_boat_freqs_range = [(490, 510)]
-    l_fcs = [4000]
-    l_freqs_range=[(3700, 4300)]
-    noises_folder= os.path.join(os.path.dirname(__file__), "../../beluga_watch/noises")
-    sample_rate = 384000
-    resol_sound_speed=2
-    geotiff_path = os.path.join(os.path.dirname(__file__), "../datas/BelugaRelativeDens/BelugaRelativeDens.tif")
-    one_meter = False
-    n_processes = cpu_count() - 1 if cpu_count()>1 else 1
+    one_meter = False #configuration of tetrahedras (one_meter or 30cm)
     height_sensor = 0.85
-    n_calc_ranges = 30
-    #angle_calc = 2*np.pi/256
-    n_parts = 256
-    mult_range = 1.25
-    range_ultra_max = 50000
-    snr_min_dB = 0
-    sound_velocity_path = os.path.join(os.path.dirname(__file__), "../datas/sound_velocity_new.csv")
-    path = os.path.join(os.path.dirname(__file__), "../datas/for_model")
-    noises = None
-    noises_for_nav = None
-    weights = {"density" : True, "navigation" : True, "forecasting error" : False}
-    err_max = 5000
 
     #---Initialisation---
-    def __init__(self, converter, new_dics=False, **kwargs):
+    def __init__(self, converter : "Conv", new_dics:bool=False, **kwargs):
         for attr, value in kwargs.items():
             setattr(self, attr, value)
         self.args_alpha = self.get_params_alpha() #for the transmission loss in the water due to the chimical components
@@ -93,7 +100,7 @@ class Calculator:
         self.create_l_to_avr()
 
     #---Ranges---
-    def get_max_range(self, new = False):
+    def get_max_range(self, new : bool = False):
         if (not new) & ("df_ranges.csv" in os.listdir(self.path)):
             df_ranges = pd.read_csv(os.path.join(self.path, "df_ranges.csv"), sep=";").drop("Unnamed: 0", axis = 1)
         else:
@@ -131,7 +138,7 @@ class Calculator:
             mask = (abs(df_ranges["source_level_beluga"] - self.source_level_beluga) < 0.5) & (df_ranges["freq"] == freq) & (df_ranges["freq_range_min"] == freq_range[0]) & (df_ranges["freq_range_max"] == freq_range[1]) & (abs(df_ranges["noise"] - self.noises[freq])<0.5)
         return df_ranges.loc[mask, "range_max"].max(), df_ranges.loc[mask, "range_mean"].max()
     
-    def get_range(self, arg):
+    def get_range(self, arg : tuple[float, tuple[float, float], int, "Point"]):
         freq, freq_range, k, point = arg
         l_ranges = []
         areat = self.converter.utm2area(point.coords[0], point.coords[1])
@@ -161,7 +168,7 @@ class Calculator:
         return freq, np.max(l_ranges)
 
     #---Creation od df_areas---
-    def create_df_areas(self, new = False):
+    def create_df_areas(self, new : bool = False):
         if (not new) & ("df_areas.csv" in os.listdir(self.path)):
             self.df_areas = pd.read_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
             self.df_areas.drop(columns="Unnamed: 0", inplace = True)
@@ -203,7 +210,7 @@ class Calculator:
         return None
 
     #---Weights Density---  
-    def weight_density(self, x, y, d):
+    def weight_density(self, x : int, y : int, d : int):
         #les points sont en coordoonées d'area et non en coordonnées angulaire
         #à vérifier si quand on prend toute la zone on a des valeurs cohérentes notamment si on a des poids nuls ou quasi (epsilon)
         n_area = self.converter.n_depth_area(self.topo.dic_depths[(x,y)])
@@ -225,7 +232,7 @@ class Calculator:
         return None
 
     #---Navigation Weights---
-    def zone_intersects_line(self, row, linestring, l_nav):
+    def zone_intersects_line(self, row : Any, linestring : Linestring, l_nav : list[tuple[int,int]]):
         if row.d == 0:
             polygon = Polygon([
                 self.converter.area2utm((row.x - 0.5, row.y - 0.5)),
@@ -237,7 +244,7 @@ class Calculator:
                 l_nav.append((int(row.x), int(row.y)))
         return None
 
-    def calc_nav_weight_multi_pros(self, args):
+    def calc_nav_weight_multi_pros(self, args : tuple[tuple[int,int], float]):
         """
         Find the areas where the boat is audible when its in areat
         """
@@ -324,9 +331,10 @@ class Calculator:
             for i, l in enumerate(self.l_to_avr):
                 range_max = max(l_thetas[i], l_thetas[i+1])
                 to_avr, preds, nexts = l
-                ind = np.where(ut.norme(to_avr[:, 0], to_avr[:, 1]) < range_max)[0]
-                if len(ind) > 0:
-                    vectorized_f(to_avr[ind][:,0], to_avr[ind][:,1], preds[ind][:,0], preds[ind][:,1], nexts[ind][:,0], nexts[ind][:,1], np.repeat(q, len(to_avr[ind])))
+                if len(to_avr) > 0:
+                    ind = np.where(ut.norme(to_avr[:, 0], to_avr[:, 1]) < range_max)[0]
+                    if len(ind) > 0:
+                        vectorized_f(to_avr[ind][:, 0], to_avr[ind][:, 1], preds[ind][:, 0], preds[ind][:, 1], nexts[ind][:, 0], nexts[ind][:, 1], np.repeat(q, len(to_avr[ind])))
 
         print("area done")
         return results
@@ -347,13 +355,13 @@ class Calculator:
         else:
             results = [self.calc_nav_weight_multi_pros(arg) for arg in args]
         nav_exp = pd.Series(0, index=self.df_areas.index, dtype=float)
-        for s_tloss in results:
-            nav_exp += s_tloss
+        for exp in results:
+            nav_exp += exp
         self.df_areas["nav_weight"] = 1 + (self.gain - 1) * nav_exp / len(self.boat_freqs) / len(l_nav)
         return None
 
     #---Main Function    
-    def main_func(self, npoint):
+    def main_func(self, npoint : "cls_points.NPointBayesian"):
         self.modify_environnement(npoint)
         args = [(npoint.points[k], freq, freq_range, k) for k in range (cls_points.NPoint.n_tetrahedras) for freq, freq_range in zip(self.l_fcs, self.l_freqs_range)]
 
@@ -367,7 +375,7 @@ class Calculator:
         for colonne1, serie1, colonne2, serie2 in results:
             self.df_areas[colonne1] = serie1
             self.df_areas[colonne2] = serie2
-        self.df_areas["error"] = 0
+        self.df_areas["error"] = 0.
         self.df_areas["count"] = 0
         for freq in self.l_fcs:
             cols = [str(k) + "_use_crb" + str(freq) for k in range (cls_points.NPoint.n_tetrahedras)]
@@ -381,7 +389,7 @@ class Calculator:
         print("Value : ", (self.df_areas.loc[mask, "w"] / (1+self.df_areas.loc[mask, "error"])).sum())
         return 1e-6 + (self.df_areas.loc[mask, "w"] / (1+self.df_areas.loc[mask, "error"])).sum()
 
-    def modify_environnement(self, npoint):
+    def modify_environnement(self, npoint : "cls_points.NPointBayesian"):
         coordinates_hydrophones = self.env.tetrahedras['0'].relative_hydro_coords
         rotation_matrix = self.env.tetrahedras['0'].rotation_matrix
         use_h4 = self.env.tetrahedras['0'].use_h4
@@ -405,7 +413,7 @@ class Calculator:
         return None
 
     #---Position and tdoas errors---
-    def calc_meter_errors(self, row, freq):
+    def calc_meter_errors(self, row : Any, freq : float):
         variances = []
         truth_mask = []
         for k in range (cls_points.NPoint.n_tetrahedras):
@@ -419,12 +427,12 @@ class Calculator:
         pos = self.converter.area2enu((row.x, row.y), row.d)
         crb_matrix = pos_crb_matrix(pos, w, truth_mask, self.env)
         err =  np.sqrt(np.sum(np.diag(crb_matrix)))
-        if err is np.nan:
+        if np.isnan(err):
             return (0, 0)
         else:
-            return (np.nan, 1)
+            return (err, 1)
     
-    def calc_tdoa_errors(self, args):
+    def calc_tdoa_errors(self, args : tuple["cls_points.Point", float, tuple[float,float], int]):
         point, freq, freq_range, k = args
         s_snr_dB = pd.Series(self.snr_min_dB - 1, index=self.df_areas.index, dtype=float)
         s_count_areas = pd.Series(0, index=self.df_areas.index, dtype=int)
@@ -514,13 +522,14 @@ class Calculator:
             for i, l in enumerate(self.l_to_avr):
                 to_avr, preds, nexts = l
                 range_max = max(l_thetas[i], l_thetas[i+1])
-                ind = np.where(ut.norme(to_avr[:, 0], to_avr[:, 1]) < range_max)[0]
-                if len(ind) > 0:
-                    vectorized_f(to_avr[ind][:,0], to_avr[ind][:,1], preds[ind][:,0], preds[ind][:,1], nexts[ind][:,0], nexts[ind][:,1], np.repeat(q, len(to_avr[ind])))
+                if len(to_avr) > 0:
+                    ind = np.where(ut.norme(to_avr[:, 0], to_avr[:, 1]) < range_max)[0]
+                    if len(ind) > 0:
+                        vectorized_f(to_avr[ind][:, 0], to_avr[ind][:, 1], preds[ind][:, 0], preds[ind][:, 1], nexts[ind][:, 0], nexts[ind][:, 1], np.repeat(q, len(to_avr[ind])))
 
         return str(k) + "_tdoa_error" + str(freq), s_tdoa_errors, str(k) + "_use_crb" + str(freq), s_use_crb  
 
-    def calc_tdoa_errors_hydro(self, snr_dB, k, freq, freq_range):
+    def calc_tdoa_errors_hydro(self, snr_dB : float, k : int, freq : float, freq_range : tuple[float,float]):
         if snr_dB >= self.snr_min_dB:
             snr_power = 10**(snr_dB/10)
             #We can make the calcul on the 6 pairs of hydrophones but because it has the same SNR the tdoa error will be the same
@@ -534,10 +543,10 @@ class Calculator:
             return np.nan, False
 
     #---Acoustic functions---
-    def calc_snr_dB(self, tl, freq):
+    def calc_snr_dB(self, tl:float, freq:float):
         return self.source_level_beluga - tl - self.noises[freq]
 
-    def tloss(self, depthh, depthsb, rx_ranges, freq, depths, substrat):
+    def tloss(self, depthh : float, depthsb : np.ndarray, rx_ranges : np.ndarray, freq : float, depths : np.ndarray, substrat : np.ndarray):
         args={
             "frequency" : freq,
             "depth": depths,
@@ -572,7 +581,7 @@ class Calculator:
     def init_worker(self):
         """When Multiprocessing is used, at the creation of a worker, the variables in the other files are "reseted" that's why you have to initialise again"""
         cls_points.Point.set_topo(self.topo, self.height_sensor)
-        cls_points.Point.update_point(self.converter.xmin, self.converter.ymin, self.converter.xmax, self.converter.ymax)
+        cls_points.Point.update_point(self.converter.n_areas_x, self.converter.n_areas_y, self.converter.width_area)
 
     def get_params_alpha(self):
         """To make the calculus of alpha easier"""
@@ -595,18 +604,18 @@ class Calculator:
         t3 = a3*p3
         return t1, t2, t3, f12, f22
 
-    def alpha(self, freq, depth, soundspeed):
+    def alpha(self, freq : float, depth : float, soundspeed : float):
         t1, t2, t3, f12, f22 = self.args_alpha
         f2 = (freq/1000)**2 #need to have it in kHz
         z = np.array([1, depth, depth**2])
         return (t1/(f2+f12)/soundspeed + (t2/(f2+f22)/soundspeed + t3)@z) * f2
 
-    def get_noises(self, list_noises, l_fcs, l_freqs_range):
+    def get_noises(self, list_noises : list[str], l_fcs : list[float], l_freqs_range : list[tuple[float, float]]):
         noises = {}
         for f, freq_range in zip(l_fcs, l_freqs_range):
                 noises[f] =np.mean([10 * np.log10(spectral_power(noise/self.audio_system_gain, self.sample_rate, freq_range) / (freq_range[1] - freq_range[0]) / noise.shape[1]*self.sample_rate) - self.system_sensitivity for noise in list_noises])  #/ noise.shape[1]*self.sample_rate is for normalisation
         return noises
-####A commenter !!!!
+
     def create_l_to_calculate(self):
         """Creates a dictionary where each key is a distance and each value is the list of areas at that distance (sorted by increasing angle), along with the list of angles to traverse"""
         self.dic_dists = {d : [] for d in range (self.n_areas)}
@@ -619,7 +628,7 @@ class Calculator:
         self.l_to_calculate = np.linspace(0, np.pi/2, np.ceil(self.n_parts / 4).astype(int) +1)
         return None
     
-    def create_l_dists(self, theta):
+    def create_l_dists(self, theta : float):
         """"
         To calculate the transmission loss, you need the topology as well as the locations at which the loss is evaluated (rx_ranges).
         For the topology, a list called l_dists is created; each of its elements is a triplet: the first item is the area crossed, the second is the distance from (0,0), and the last indicates whether the depth should be taken on the crossed area or averaged between the crossed area and the next one along x and/or y.
@@ -659,7 +668,7 @@ class Calculator:
         ut.sort_insert_p_dist([(0,0), 0, (1,1)], l_dists, 1/self.converter.width_area)
         return l_dists, np.array(rx_ranges), areas_visited
 
-    def create_l_depths(self, l_dists, area, q):
+    def create_l_depths(self, l_dists : list, area : tuple[int,int], q : int):
         """Transforms the list l_dists into a list of pairs: the distance to the area, and the areas over which the depth must be averaged"""
         l_depths = []
         for e in l_dists:
@@ -717,13 +726,13 @@ class Calculator:
         self.l_to_avr = l_to_avr    
         return None  
     
-    def save_error(self, path):
+    def save_error(self, path : str):
         mask = (self.df_areas["count"] == 0) | (self.df_areas["error"] > self.err_max)
         self.df_areas.loc[mask, "error"] = np.nan
         self.df_areas["error"].to_csv(os.path.join(path, "error.csv"), sep=";")
         return None
 
-    def load_error(self, path):
+    def load_error(self, path : str):
         error = pd.read_csv(os.path.join(path, "error.csv"), sep=";")
         error.drop(columns="Unnamed: 0", inplace = True)
         self.df_areas["error"] = error
@@ -823,7 +832,7 @@ class Calculator:
         """
 
 
-    """
+"""
     def calc_nav_weight_multi_pros(self, args):
         areat, freq, dic_to_calc, mat_which_value = args
         s_tloss = pd.Series(0, index=self.df_areas.index, dtype=float)
@@ -899,7 +908,7 @@ class Calculator:
 
 
 
-    """def calc_tdoa_errors(self, args):
+"""def calc_tdoa_errors(self, args):
         point, freq, freq_range, k = args
         l_angles = [-np.round(np.pi/2, 8), 0, np.round(np.pi/2, 8), np.round(np.pi,8)]
         dic_angles_range = {angle : self.range_ultra_max for angle in l_angles}
