@@ -1,7 +1,8 @@
 #!/bin/sh
 echo "Post-commit : ajout des fichiers _ntb.py générés..."
 # Récupérer les fichiers _ntb.py qui ont été créés ou modifiés
-py_files=$(git ls-files -o -m --exclude-standard '*_ntb.py')
+py_files=$(git status --porcelain | grep -E '^ M.*_ntb\.py$' | cut -c4-)
+
 
 if [ -z "$py_files" ]; then
     echo "Aucun fichier _ntb.py à ajouter."

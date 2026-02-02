@@ -21,15 +21,18 @@ dic_maps = {}
 dic_values = {}
 for n_tetrahedras in l_n_tetrahedras:
     n = n_tetrahedras.split("_")[0]
-    l_versions = os.listdir(os.path.join(os.path.dirname(__file__), "results", n_tetrahedras))
-    dic_models_versions[n] = [version[1:] for version in l_versions]
-    for version in l_versions:
-        vers = version[1:]
-        mod = cls_mod.load(int(n), vers)
-        dic_hist[(n, vers)] = mod.create_hist_areas_according_error() 
-        dic_maps[(n, vers)] = mod.create_error_map().get_root().render()
-        dic_values[(n, vers)] = mod.best_value()
-
+    try :
+        int(n)
+        l_versions = os.listdir(os.path.join(os.path.dirname(__file__), "results", n_tetrahedras))
+        dic_models_versions[n] = [version[1:] for version in l_versions]
+        for version in l_versions:
+            vers = version[1:]
+            mod = cls_mod.load(int(n), vers)
+            dic_hist[(n, vers)] = mod.create_hist_areas_according_error() 
+            dic_maps[(n, vers)] = mod.create_error_map().get_root().render()
+            dic_values[(n, vers)] = mod.best_value()
+    except:
+        continue
 
 # Initialisation de l'application Dash
 app = dash.Dash(__name__)

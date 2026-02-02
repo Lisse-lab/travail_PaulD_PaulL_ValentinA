@@ -20,6 +20,7 @@ import numpy as np
 import random
 import hydrophone_placement_scripts.utils_scripts.utils as ut
 
+from scipy.optimize import linear_sum_assignment
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -43,9 +44,9 @@ class Point:
     def update_point(cls, n_areas_x : int, n_areas_y : int, width_area : float):
         cls.n_areas_x = n_areas_x
         cls.n_areas_y = n_areas_y
-        cls.lx = np.ceil(np.log2(n_areas_x)).astype(int)
-        cls.ly = np.ceil(np.log2(n_areas_y)).astype(int)
-        cls.params_cor = np.array([2/((n_areas_x * width_area)**2), 2/((n_areas_y * width_area)**2), 1/2/(40**2)])
+        # cls.lx = np.ceil(np.log2(n_areas_x)).astype(int)
+        # cls.ly = np.ceil(np.log2(n_areas_y)).astype(int)
+        cls.params_cor = np.array([2/((n_areas_x * width_area / 1000)**2), 2/((n_areas_y * width_area / 1000)**2), 1/2/(40**2)])
         return None
 
     @classmethod
@@ -56,21 +57,42 @@ class Point:
     
     def __init__(self, area : tuple[int, int] | None = None):
         if area is None:
-            self.area = (random.randint(0, self.n_areas_x), random.randint(0, self.n_areas_x))
+            self.area = tuple(random.choice(self.topo.areas_available))
         else:
             self.area = area
+            assert self.in_water(), "the Point is not in water"
         self.coords = self.topo.converter.area2utm(self.area)
     
-    def modif(self, type):
+    def create_new_point(self, l : np.ndarray):
+        """
+        Crée un Point a proximité, pour s'assurer que les points ne soient pas isolés
+        Create a nearby Point to ensure that the points are not isolated
+        """
+        if len(l) > 1:
+            return Point(area=tuple(random.choice([area for area in l if ((area[0] != self.area[0]) | (area[1] != self.area[1]))])))
+        else:
+            print("This point is alone")
+            return Point(area = self.area)
+
+    def modif_area(self, type):
         if type == 0:
-            self.area[0] += 1
+            area = (self.area[0] + 1, self.area[1])
         elif type == 1:
-            self.area[0] -= 1
+            area = (self.area[0] - 1, self.area[1])
         elif type == 2:
-            self.area[1] += 1
+            area = (self.area[0], self.area[1] + 1)
         else :
-            self.area[1] -= 1
-        self.coords = self.topo.converter.area2utm(self.area)
+            area = (self.area[0], self.area[1] - 1)
+        try :
+            return Point(area)
+        except:
+            return Point(self.area)
+
+    def mut(self, boolean : bool):
+        if boolean:
+            return self.modif_area(random.randint(0,3))
+        else:
+            return Point(self.area)
 
     def __repr__(self):
         return self.topo.converter.utm2lla(self.coords[0], self.coords[1]).__repr__()
@@ -99,13 +121,16 @@ class Point:
     def near(self, other :  "Point", range : float):
         return self.dist_point_xy(other) <= 2*range
 
+    def near_xy(self, x : float, y : float, range : float):
+        return self.dist_xy(x, y) <= 2*range
+
     def norme(self, other : "Point"):
         """
         Calcule la norme que l'on utilisera pour la corrélation dans l'algorithme bayesien
         Compute the norm that will be used for correlation in the Bayesian algorithm
         """
-        return (self.params_cor[0] * ((abs(self.coords[0] - other.coords[0])) ** 2)
-                + self.params_cor[1] * ((abs(self.coords[1] - other.coords[1])) ** 2)
+        return (self.params_cor[0] * ((abs(self.coords[0] - other.coords[0]) / 1000) ** 2)
+                + self.params_cor[1] * ((abs(self.coords[1] - other.coords[1]) / 1000) ** 2)
                 + self.params_cor[2] * ((abs(self.depth() - other.depth())) ** 2))
 
     # def inf(self, other : "Point"):
@@ -113,52 +138,6 @@ class Point:
             
     def __eq__(self, other : "Point"):
         return self.area == other.area
-
-class PointBayesian (Point):
-    max_compt = 10000
-
-    def __init__(self, area : tuple[int, int] | None = None):
-        if area is None:
-            compt = 0
-            super().__init__()
-            while not self.in_water():
-                assert compt < PointBayesian.max_compt, "too many attempts to create a point in water"
-                compt +=1
-                super().__init__()
-        else:
-            super().__init__(area)
-            assert self.in_water(), "the PointBayesian is not bayesian"
-        
-    def create_random_point(self, range : float):
-        """
-        Utile pour create_new_pointbayesian pour créer des cooordonnées qui sont dans la zone à une distance inférieure de range au Point
-        Useful for create_new_pointbayesian to generate coordinates that lie within the area at a distance smaller than range from the Point
-        """
-        d = np.sqrt(random.uniform(0, (2*range)**2))
-        theta = random.uniform(0, 2*np.pi)
-        area = self.topo.converter.utm2area(d * np.cos(theta) + self.coords[0], d * np.sin(theta) + self.coords[1])
-        return area
-    
-    def create_new_pointbayesian(self, range : float):
-        """
-        Crée un Point Bayesien a proximité, pour s'assurer que les points ne soient pas isolés
-        Create a nearby Bayesian Point to ensure that the points are not isolated
-        """
-        area = self.create_random_point(range)
-        compt = 0
-        while not Point(area=area).in_water():
-            assert compt < PointBayesian.max_compt, "too many attempts to create a new point in water"
-            compt +=1
-            area = self.create_random_point(range)
-        return PointBayesian(area=area)
-
-    def to_genetic(self):
-        return PointGenetic(area = self.area)
-
-class PointGenetic (Point):
-
-    def __init__(self, area : tuple[int, int] | None = None):
-        super().__init__(area)
         
 class NPoint :
     n_tetrahedras = 2
@@ -205,7 +184,7 @@ class NPoint :
         nareas = []
         for i in range (NPoint.n_tetrahedras):
             nareas.append(self.points[i].area)
-            return nareas
+        return nareas
 
     def corr(self, other : "NPoint"):
         """
@@ -215,11 +194,9 @@ class NPoint :
         e1 = self.points
         e2 = other.points
         assert len(e1) == len(e2), "e1 and e2 do not have the same size"
-        mat = np.zeros((len(e1), len(e2)))
-        for i in range (len(e1)):
-            for j in range (len(2)):
-                mat[i,j] = e1[i].norme(e2[j])
-        return np.exp(-1/2 * mat.sum(axis = 0).min())
+        mat = np.array([[p1.norme(p2) for p1 in e1] for p2 in e2])
+        row_ind, col_ind = linear_sum_assignment(mat)
+        return np.exp(-1/2 * mat[row_ind, col_ind].sum())
 
     def in_water(self):
         for point in self.points:
@@ -235,7 +212,7 @@ class NPoint :
         t = np.array([False] * self.n_tetrahedras)
         for i in range(len(self.points)):
             for j in range(i):
-                if self.points[i].near(self.points[j]):
+                if self.points[i].near(self.points[j], self.range):
                     t[i] = True
                     t[j] = True
         return t.all()
@@ -260,91 +237,111 @@ class NPoint :
 class NPointBayesian (NPoint):
 
     def __init__(self, points : list[Point] | None = None, nareas : list[tuple[int,int]] | None = None):
-        assert self.n_tetrahedras > 1, "the number of sensors must be at least 2"
         if points is None:
             points = []
             if nareas is None:
-                t = np.array([False] * NPoint.n_tetrahedras) # To check wether the Points are not isolated
+                t = np.array([False] * self.n_tetrahedras) # To check wether the Points are not isolated
                 points = []
-                for _ in range (NPoint.n_tetrahedras):
-                    points.append(PointBayesian())
-                for i in range(NPoint.n_tetrahedras):
+                for _ in range (self.n_tetrahedras):
+                    points.append(Point())
+                for i in range(self.n_tetrahedras):
                     for j in range(i):
-                        if points[i].near(points[j]): # To check wether the Points are not isolated
+                        if points[i].near(points[j], self.range): # To check wether the Points are not isolated
                             t[i] = True
                             t[j] = True
                 tfalse = np.where(~t)[0] #While some points are isolated, we replace the isolated points by a non isolated one
                 while len(tfalse) != 0:
                     i = tfalse[0]
-                    j = random.choice([x for x in range(NPoint.n_tetrahedras) if x != i])
-                    points[i] = points[j].create_new_pointbayesian(self.range)
-                    for j in range(NPoint.n_tetrahedras):
-                        if points[i].near(points[j]): 
-                            t[j] = True
+                    j = random.choice([x for x in range(self.n_tetrahedras) if x != i])
+                    l = points[j].topo.areas_available[np.where(points[j].near_xy(points[j].topo.xs_available, points[j].topo.ys_available, self.range))[0]]
+                    points[i] = points[j].create_new_point(l)
+                    for k in range(self.n_tetrahedras):
+                        if points[i].near(points[k], self.range): 
+                            t[k] = True
                     tfalse = np.where(~t)[0]
                 super().__init__(points = points)
             else:
-                assert len(nareas) == NPoint.n_tetrahedras, "nareas is not the right size"
-                for i in range (NPoint.n_tetrahedras):
-                    ut.sort_insert_point(PointBayesian(nareas[i]), points)
-                super().__init__(points = points)
+                super().__init__(nareas = nareas)
+                assert self.in_water() & self.verify_range(), "the NPointBayesian is not valid"
         else:
             super().__init__(points = points)
-            assert self.in_water() & self.verify_range(), "the NPointBayesian is not Bayesian"
+            assert self.in_water() & self.verify_range(), "the NPointBayesian is not valid"
 
     # def to_genetic(self):
     #     return NPointGenetic(nareas=self.nareas())
 
 class NPointGenetic (NPoint):
-
+    adj = {}
+    
     def __init__(self, points : list[Point] | None = None, nareas : list[tuple[int,int]] | None = None):
+        self.sorted = False
         if points is None:
             points = []
             if nareas is None:
-                t = np.array([False] * NPoint.n_tetrahedras) # To check wether the Points are not isolated
+                self.adj = {i: [] for i in range(self.n_tetrahedras)}
+                t = np.array([False] * self.n_tetrahedras) # To check wether the Points are not isolated
                 points = []
-                for _ in range (NPoint.n_tetrahedras):
-                    points.append(PointBayesian().to_genetic())
-                for i in range(NPoint.n_tetrahedras):
+                for _ in range (self.n_tetrahedras):
+                    points.append(Point())
+                for i in range(self.n_tetrahedras):
                     for j in range(i):
-                        if points[i].near(points[j]): # To check wether the Points are not isolated
+                        if points[i].near(points[j], self.range): # To check wether the Points are not isolated
                             t[i] = True
                             t[j] = True
+                            self.adj[i].append(j)
+                            self.adj[j].append(i)
                 tfalse = np.where(~t)[0] #While some points are isolated, we replace the isolated points by a non isolated one
                 while len(tfalse) != 0:
                     i = tfalse[0]
-                    j = random.choice([x for x in range(NPoint.n_tetrahedras) if x != i])
-                    points[i] = points[j].create_new_pointbayesian(self.range)
-                    for j in range(NPoint.n_tetrahedras):
-                        if points[i].dist_point_xy(points[j]) <= 2*self.range: 
-                            t[j] = True
+                    j = random.choice([x for x in range(self.n_tetrahedras) if x != i])
+                    l = points[j].topo.areas_available[np.where(points[j].near_xy(points[j].topo.xs_available, points[j].topo.ys_available, self.range))[0]]
+                    points[i] = points[j].create_new_point(l)
+                    for k in range(self.n_tetrahedras):
+                        if points[i].near(points[k], self.range): 
+                            t[k] = True
+                            if i != k:
+                                self.adj[i].append(k)
+                                self.adj[k].append(i)
                     tfalse = np.where(~t)[0]
                 super().__init__(points = points)
             else:
-                assert len(nareas) == NPoint.n_tetrahedras, "nareas is not the right size"
-                for i in range (NPoint.n_tetrahedras):
-                    ut.sort_insert_point(PointBayesian(nareas[i]), points)
                 super().__init__(points = points)
+                assert self.in_water(), "the NPointGenetic is not valid"
         else:
             super().__init__(points = points)
-            assert self.in_water() & self.verify_range(), "the NPointBayesian is not Bayesian"
+            assert self.in_water(), "the NPointGenetic is not valid"
 
-    def __init__(self, points : list[Point] | None = None, nareas : list[tuple[int,int]] | None = None):
-        if points is None:
-            points = []
-            if nareas is None:
-                for _ in range (NPoint.n_tetrahedras):
-                    points.append(PointGenetic())
-                super().__init__(points = points)
-            else:
-                assert len(nareas) == NPoint.n_tetrahedras, "nareas is not the right size"
-                for i in range (NPoint.n_tetrahedras):
-                    points.append(PointGenetic(nareas[i]))
-                super().__init__(points = points)
-        else:
-            for point in points:
-                assert isinstance(point, PointGenetic), "one point is not Genetic"
-            super()._init(points = points)
+    def create_adj(self):
+        if len(self.adj) == 0:
+            self.adj = {i: [] for i in range(self.n_tetrahedras)}
+            for i in range(self.n_tetrahedras):
+                for j in range(i):
+                    if self.points[i].near(self.points[j], self.range):
+                        self.adj[i].append(j)
+                        self.adj[j].append(i)
+        return None
+    
+    def sort(self):
+        if not self.sorted:
+            self.create_adj()
+            start = min(range(self.n_tetrahedras), key=lambda i: len(self.adj[i]))
+            visited = {start}
+            order = [start]
+            while len(visited) < self.n_tetrahedras:
+                cur = order[-1]
+                neigh = [j for j in self.adj[cur] if j not in visited]
+                if len(neigh) > 0:
+                    nxt = min(neigh, key=lambda j: self.points[cur].dist_point_xy(self.points[j]))
+                else:
+                    remaining = [j for j in range(self.n_tetrahedras) if j not in visited]
+                    nxt = min(remaining, key=lambda j: self.points[cur].dist_point_xy(self.points[j]))
+
+                order.append(nxt)
+                visited.add(nxt)
+            points = [self.points[i] for i in order]
+            self.points = points
+            self.sorted = True
+        return None
 
     @classmethod
     def set_p_mut(cls, p_mut : float):
@@ -356,19 +353,19 @@ class NPointGenetic (NPoint):
         Pour créer un nouveau NPoint à partir de deux parents
         To create a new NPoint thanks to two parents
         """
+        self.sort()
+        other.sort()
         
-        p_mut = self.p_mut
-        assert len(b1) == len(b2), "the two nbin_coords of the parents do not have the same size"
-        new_nbin_coords = [0] * len(b1)
         bool_par = True
-        for i in range (len(b1)):
+        points = []
+        for i in range (self.n_tetrahedras):
             if i in ks:
                 bool_par = not bool_par
             if bool_par:
-                new_nbin_coords[i] = b1[i] if random.random()>p_mut else 1-b1[i]
+                points.append(self.points[i].mut(random.random()<self.p_mut))
             else:
-                new_nbin_coords[i] = b2[i] if random.random()>p_mut else 1-b2[i]
-        return NPointGenetic(nbin_coords = new_nbin_coords)
+                points.append(other.points[i].mut(random.random()<other.p_mut))
+        return NPointGenetic(points = points)
 
     # def corr(self, other : "NPoint"):
     #     """
@@ -387,7 +384,7 @@ class NPointGenetic (NPoint):
     #     return np.exp(-1/2 * s)
 
     def to_bayesian(self):
-        return NPointBayesian(nareas=self.nareas())
+        return NPointBayesian(nareas=self.get_nareas())
 
 class Set_Of_NPoints:
 
@@ -443,7 +440,7 @@ class Set_Of_NPoints:
     def l_nareas_values(self):
         l_nareas = []
         for npoint in self.set_of_npoints:
-            l_nareas.append(npoint.nareas())
+            l_nareas.append(npoint.get_nareas())
         return (l_nareas, self.values)
 
 class Set_of_NPointsBayesian (Set_Of_NPoints):
@@ -497,7 +494,7 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
             set_of_npoints = []
             if l_nareas is None:
                 for _ in range (size):
-                    set_of_npoints.append(NPointBayesian().to_genetic())
+                    set_of_npoints.append(NPointGenetic())
             else:
                 for nareas in l_nareas:
                     set_of_npoints.append(NPointGenetic(nareas=nareas))
@@ -536,11 +533,11 @@ class Set_of_NPointsGenetic (Set_Of_NPoints):
         ks = []
         for _ in range (self.n_sep):
             compt = 0
-            k = random.randint(0, NPoint.n_tetrahedras)
+            k = random.randint(0, NPoint.n_tetrahedras - 1)
             while k in ks:
                 assert compt < Set_of_NPointsGenetic.max_compt_ks, "too many attemps to get the ks"
                 compt +=1
-                k = random.randint(0, NPoint.n_tetrahedras)      
+                k = random.randint(0, NPoint.n_tetrahedras - 1)      
                 ks.append(k)
         ks.sort()
         self.add_npoint(set_of_parents.set_of_npoints[i_par1].breed(set_of_parents.set_of_npoints[i_par2], ks))

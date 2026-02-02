@@ -8,7 +8,7 @@ if ! python -c "import jupytext" &> /dev/null; then
 fi
 
 # Création ou mise à jour des .ipynb à partir des _ntb.py
-for py_file in *_ntb.py; do
+find . -name "*_ntb.py" | while read -r py_file; do
     ipynb_file="${py_file/_ntb.py/.ipynb}"
     echo "Traitement de $py_file -> $ipynb_file..."
     python -m jupytext --to notebook "$py_file" --output "$ipynb_file"

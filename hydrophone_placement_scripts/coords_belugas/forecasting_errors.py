@@ -626,4 +626,4 @@ if __name__ == "__main__":
     interpolated_values = griddata(known_points, known_values, missing_points, method="linear")
     mod_pers.df_areas.loc[mod_pers.df_areas["forecasting_error"].isna(), "forecasting_error"] = interpolated_values
     mod_pers.df_areas.loc[mod_pers.df_areas["forecasting_error"].isna(), "forecasting_error"] = mod_pers.df_areas["forecasting_error"].max()
-    mod_pers.df_areas[["polygone", "forecasting_error"]].to_csv(os.path.join(os.path.dirname(__file__), "../datas/for_model/df_forecasting_error.csv"), sep=";")
+    mod_pers.df_areas[["polygone", "forecasting_error"]].to_csv(os.path.join(os.path.dirname(__file__), "../datas/for_model/df_forecasting_errors.csv"), sep=";")

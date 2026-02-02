@@ -7,7 +7,7 @@ import numpy as np
 import os
 import arlpy.uwapm as pm
 import geopandas as gpd
-from shapely.geometry import Polygon, Point, Linestring
+from shapely.geometry import Polygon, Point, LineString
 from shapely import wkt
 from multiprocessing import Pool, cpu_count
 import sys
@@ -32,14 +32,14 @@ class Calculator:
     
     l_fcs = [4000]
     l_freqs_range=[(3700, 4300)]
-    boat_freqs = [500]
-    l_boat_freqs_range = [(490, 510)]
+    boat_freqs = [4000]
+    l_boat_freqs_range = [(3700, 4300)]
     source_level_beluga = 143.8 #dB
     boat_noise = 160
     noise_threshold = 50
     gain = 5
     n_parts = 64
-    weights = {"density" : True, "navigation" : True, "forecasting error" : False}
+    weights = {"density" : True, "navigation" : True, "forecasting error" : True}
     err_max = 5000
 
     snr_min_dB = 0
@@ -84,7 +84,7 @@ class Calculator:
             self.noises = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.l_fcs, self.l_freqs_range) #we only use one sec because there are not a lot of differences with more time
         if self.noises_for_nav is None:
             self.noises_for_nav = self.get_noises(load_noises(self.noises_folder, self.sample_rate), self.boat_freqs, self.l_boat_freqs_range)
-        self.topo = topo.Topo(self.converter, new_dic_depths=new_dics, new_dic_substrats=new_dics)
+        self.topo = topo.Topo(self.converter, new_dic_depths=new_dics, new_dic_substrats=new_dics, height_sensor=self.height_sensor)
         self.create_df_areas(new = new_dics)
 
         if self.one_meter:
@@ -196,14 +196,17 @@ class Calculator:
         if self.weights["density"]:
             if "weight_density" not in self.df_areas.columns:
                 self.df_areas["weight_density"] = self.df_areas.apply(lambda row : self.weight_density(row.x, row.y, row.d), axis = 1) #les points sont en coordoonées d'area et non en coordonnées angulaire
+                self.df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
             self.df_areas["w"] *= self.df_areas["weight_density"]
         if self.weights["navigation"]:
             if "nav_weight" not in self.df_areas.columns:
                 self.calc_nav_weight()
+                self.df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
             self.df_areas["w"] *= self.df_areas["nav_weight"]
         if self.weights["forecasting error"]:
             if "forecasting_error" not in self.df_areas.columns:
                 self.fill_forecasting_errors()
+                self.df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
             self.df_areas["w"] *= self.df_areas["forecasting_error"]
         print("df_areas created")
         self.df_areas.to_csv(os.path.join(self.path, "df_areas.csv"), sep = ";")
@@ -219,8 +222,8 @@ class Calculator:
 
     #---Forecsting errors---
     def fill_forecasting_errors(self):
-        assert ("df_forecasting_errors.csv" in os.listdir(os.path.dirname(__file__), "../datas/for_model")), "you need to make the forecasting errors dataframe by executing the scripts coords_belugas/forecasting_errors.py or coords_belugas/comparaison_errors.ipynb" 
-        df_forecasting_error = pd.read_csv("../datas/for_model/df_forecasting_error.csv", sep=";").drop("Unnamed: 0", axis = 1)
+        assert ("df_forecasting_errors.csv" in os.listdir(os.path.join(os.path.dirname(__file__), "../datas/for_model"))), "you need to make the forecasting errors dataframe by executing the scripts coords_belugas/forecasting_errors.py or coords_belugas/comparaison_errors.ipynb" 
+        df_forecasting_error = pd.read_csv(os.path.join(os.path.dirname(__file__), "../datas/for_model/df_forecasting_errors.csv"), sep=";").drop("Unnamed: 0", axis = 1)
         df_forecasting_error["polygone"] = df_forecasting_error["polygone"].apply(wkt.loads)
         df_forecasting_error["geometry"] = df_forecasting_error["polygone"].apply(lambda poly : Polygon([(lat, lon) for lon, lat in poly.exterior.coords]))
         gdf_errors = gpd.GeoDataFrame(df_forecasting_error, crs="EPSG:4326")
@@ -232,7 +235,7 @@ class Calculator:
         return None
 
     #---Navigation Weights---
-    def zone_intersects_line(self, row : Any, linestring : Linestring, l_nav : list[tuple[int,int]]):
+    def zone_intersects_line(self, row : Any, linestring : LineString, l_nav : list[tuple[int,int]]):
         if row.d == 0:
             polygon = Polygon([
                 self.converter.area2utm((row.x - 0.5, row.y - 0.5)),
@@ -251,93 +254,96 @@ class Calculator:
         areat, freq = args
         noise_threshold = max(self.noise_threshold, self.noises_for_nav[freq])
         excess_noise = self.boat_noise - noise_threshold
-        s_tloss_dB = pd.Series(index=self.df_areas.index, dtype=float)
         results = pd.Series(0, index=self.df_areas.index, dtype=float)
-        s_count_areas = pd.Series(0, index=self.df_areas.index, dtype=int)
+        if excess_noise > 0:
+            s_tloss_dB = pd.Series(index=self.df_areas.index, dtype=float)
+            
+            s_count_areas = pd.Series(0, index=self.df_areas.index, dtype=int)
 
-        mask = ((self.df_areas["x"] == areat[0]) & (self.df_areas["y"] == areat[1]))
-        s_tloss_dB[mask] = 0
-        s_count_areas[mask] += 1
-    
-        for theta in self.l_to_calculate:
-            l_dists, rx_ranges, areas_visited = self.create_l_dists(theta)
-            for q in [0,1,2,3]:
-                l_depths = self.create_l_depths(l_dists, areat, q)
-                depths, substrat = self.topo.depths_and_substrat(l_depths)
-                depthsb = self.converter.create_depthsb(depths[:,1].max())
-                if len (depthsb) > 0:
-                    tlosses = self.tloss(0.5, depthsb, rx_ranges, freq, depths, substrat)
-                    for col, area in zip(tlosses.columns, areas_visited):
-                        area2 = ut.modif_area_q(area, areat, q)
-                        mask = ((self.df_areas["x"] == area2[0]) & (self.df_areas["y"] == area2[1]))
-                        if mask.sum() >0:
-                            s_tloss_dB[mask] = tlosses[col].iloc[:mask.sum()].values
-                            s_count_areas[mask] += 1
-        mask = s_count_areas > 0
-        s_tloss_dB[mask] /= s_count_areas[mask]
-        results[mask] = excess_noise - s_tloss_dB[mask]
-        results[results < 0] = 0     
-
-        #Function to fill one empty area by interpolation
-        def f(areax, areay, prevx, prevy, nextx, nexty, q):
-            u0, v0 = ut.modif_area_q((areax, areay), areat, q)
-            u1, v1 = ut.modif_area_q((prevx, prevy), areat, q)
-            u2, v2 = ut.modif_area_q((nextx, nexty), areat, q)
-
-            mask0 = ((self.df_areas["x"] == u0) & (self.df_areas["y"] == v0))
-            mask1 = ((self.df_areas["x"] == u1) & (self.df_areas["y"] == v1))
-            mask2 = ((self.df_areas["x"] == u2) & (self.df_areas["y"] == v2))
-            indexes = results[mask0].index
-            n0, n1, n2 = mask0.sum(), mask1.sum(), mask2.sum()
-            values1 = results[mask1].values
-            values2 = results[mask2].values
-
-            if n0 == 0:
-                return None
-
-            min_n = min(n0, n1, n2)
-            results.loc[indexes[:min_n]] = (values1[:min_n] + values2[:min_n]) / 2
-
-            if n0 > min_n:
-                if n1 <= n2:
-                    min_n_2 = min(n0, n2)
-                    results.loc[indexes[min_n:min_n_2]] = values2[min_n:min_n_2]
-                    if (n0 > min_n_2) & (min_n_2 > 0):
-                        results.loc[indexes[min_n_2:n0]] = results[mask0].iloc[min_n_2-1]
-                else:
-                    min_n_2 = min(n0, n1)
-                    results.loc[indexes[min_n:min_n_2]] = values1[min_n:min_n_2]
-                    if (n0 > min_n_2) & (min_n_2 > 0):
-                        results.loc[indexes[min_n_2:n0]] = results[mask0].iloc[min_n_2-1]
+            mask = ((self.df_areas["x"] == areat[0]) & (self.df_areas["y"] == areat[1]))
+            s_tloss_dB[mask] = 0
+            s_count_areas[mask] += 1
         
-            return None
-        
-        vectorized_f = np.vectorize(f)
-        
-        for q in [0,1,2,3]:
-            l_thetas = []
-            #To know at which range boats are audible in each direction
             for theta in self.l_to_calculate:
-                _, _, areas_visited = self.create_l_dists(theta)
-                n = -1
-                boolean = True
-                while (n < len(areas_visited) -1) & (boolean):
-                    n += 1
-                    area = areas_visited[n]
-                    area2 = ut.modif_area_q(area, areat, q)
-                    boolean = (results[((self.df_areas["x"] == area2[0]) & (self.df_areas["y"] == area2[1]))] > 0).any()
-                l_thetas.append(ut.norme(areas_visited[n][0], areas_visited[n][1]))
-            #To fill the empty areas
-            for i, l in enumerate(self.l_to_avr):
-                range_max = max(l_thetas[i], l_thetas[i+1])
-                to_avr, preds, nexts = l
-                if len(to_avr) > 0:
-                    ind = np.where(ut.norme(to_avr[:, 0], to_avr[:, 1]) < range_max)[0]
-                    if len(ind) > 0:
-                        vectorized_f(to_avr[ind][:, 0], to_avr[ind][:, 1], preds[ind][:, 0], preds[ind][:, 1], nexts[ind][:, 0], nexts[ind][:, 1], np.repeat(q, len(to_avr[ind])))
+                l_dists, rx_ranges, areas_visited = self.create_l_dists(theta)
+                for q in [0,1,2,3]:
+                    l_depths = self.create_l_depths(l_dists, areat, q)
+                    depths, substrat = self.topo.depths_and_substrat(l_depths)
+                    depthsb = self.converter.create_depthsb(depths[:,1].max())
+                    if len (depthsb) > 0:
+                        tlosses = self.tloss(0.5, depthsb, rx_ranges, freq, depths, substrat)
+                        for col, area in zip(tlosses.columns, areas_visited):
+                            area2 = ut.modif_area_q(area, areat, q)
+                            mask = ((self.df_areas["x"] == area2[0]) & (self.df_areas["y"] == area2[1]))
+                            if mask.sum() >0:
+                                s_tloss_dB[mask] = tlosses[col].iloc[:mask.sum()].values
+                                s_count_areas[mask] += 1
+            mask = s_count_areas > 0
+            s_tloss_dB[mask] /= s_count_areas[mask]
+            results[mask] = excess_noise - s_tloss_dB[mask]
+            results[results < 0] = 0     
 
-        print("area done")
-        return results
+            #Function to fill one empty area by interpolation
+            def f(areax, areay, prevx, prevy, nextx, nexty, q):
+                u0, v0 = ut.modif_area_q((areax, areay), areat, q)
+                u1, v1 = ut.modif_area_q((prevx, prevy), areat, q)
+                u2, v2 = ut.modif_area_q((nextx, nexty), areat, q)
+
+                mask0 = ((self.df_areas["x"] == u0) & (self.df_areas["y"] == v0))
+                mask1 = ((self.df_areas["x"] == u1) & (self.df_areas["y"] == v1))
+                mask2 = ((self.df_areas["x"] == u2) & (self.df_areas["y"] == v2))
+                indexes = results[mask0].index
+                n0, n1, n2 = mask0.sum(), mask1.sum(), mask2.sum()
+                values1 = results[mask1].values
+                values2 = results[mask2].values
+
+                if n0 == 0:
+                    return None
+
+                min_n = min(n0, n1, n2)
+                results.loc[indexes[:min_n]] = (values1[:min_n] + values2[:min_n]) / 2
+
+                if n0 > min_n:
+                    if n1 <= n2:
+                        min_n_2 = min(n0, n2)
+                        results.loc[indexes[min_n:min_n_2]] = values2[min_n:min_n_2]
+                        if (n0 > min_n_2) & (min_n_2 > 0):
+                            results.loc[indexes[min_n_2:n0]] = results[mask0].iloc[min_n_2-1]
+                    else:
+                        min_n_2 = min(n0, n1)
+                        results.loc[indexes[min_n:min_n_2]] = values1[min_n:min_n_2]
+                        if (n0 > min_n_2) & (min_n_2 > 0):
+                            results.loc[indexes[min_n_2:n0]] = results[mask0].iloc[min_n_2-1]
+            
+                return None
+            
+            vectorized_f = np.vectorize(f)
+            
+            for q in [0,1,2,3]:
+                l_thetas = []
+                #To know at which range boats are audible in each direction
+                for theta in self.l_to_calculate:
+                    _, _, areas_visited = self.create_l_dists(theta)
+                    n = -1
+                    boolean = True
+                    while (n < len(areas_visited) -1) & (boolean):
+                        n += 1
+                        area = areas_visited[n]
+                        area2 = ut.modif_area_q(area, areat, q)
+                        boolean = (results[((self.df_areas["x"] == area2[0]) & (self.df_areas["y"] == area2[1]))] > 0).any()
+                    l_thetas.append(ut.norme(areas_visited[n][0], areas_visited[n][1]))
+                #To fill the empty areas
+                for i, l in enumerate(self.l_to_avr):
+                    range_max = max(l_thetas[i], l_thetas[i+1])
+                    to_avr, preds, nexts = l
+                    ind = np.where(ut.norme(to_avr[0], to_avr[1]) < range_max)[0]
+                    if len(ind) > 0:
+                        vectorized_f(to_avr[0][ind], to_avr[1][ind], preds[0][ind], preds[1][ind], nexts[0][ind], nexts[1][ind], q)
+
+            print("area done")
+            return results / excess_noise
+        else :
+            return results
 
     def calc_nav_weight(self):
         gdf = gpd.read_file(self.traversier_path)
@@ -522,11 +528,10 @@ class Calculator:
             for i, l in enumerate(self.l_to_avr):
                 to_avr, preds, nexts = l
                 range_max = max(l_thetas[i], l_thetas[i+1])
-                if len(to_avr) > 0:
-                    ind = np.where(ut.norme(to_avr[:, 0], to_avr[:, 1]) < range_max)[0]
-                    if len(ind) > 0:
-                        vectorized_f(to_avr[ind][:, 0], to_avr[ind][:, 1], preds[ind][:, 0], preds[ind][:, 1], nexts[ind][:, 0], nexts[ind][:, 1], np.repeat(q, len(to_avr[ind])))
-
+                ind = np.where(ut.norme(to_avr[0], to_avr[1]) < range_max)[0]
+                if len(ind) > 0:
+                    vectorized_f(to_avr[0][ind], to_avr[1][ind], preds[0][ind], preds[1][ind], nexts[0][ind], nexts[1][ind], q)
+        print("area done")
         return str(k) + "_tdoa_error" + str(freq), s_tdoa_errors, str(k) + "_use_crb" + str(freq), s_use_crb  
 
     def calc_tdoa_errors_hydro(self, snr_dB : float, k : int, freq : float, freq_range : tuple[float,float]):
@@ -563,14 +568,14 @@ class Calculator:
        
         env_acc = pm.create_env2d(**args)
         if env_acc['soundspeed'].shape[0] <= 3:
-            env_acc['soundspeed'] = env_acc['soundspeed'][:,1].mean() #if there is still some issues with the shape of sound speed, a unique value of sound speed is given
+            env_acc['soundspeed'] = self.sound_speeds[:,1].mean() #if there is still some issues with the shape of sound speed, a unique value of sound speed is given
         tlosses = pm.compute_transmission_loss(env_acc, mode='semicoherent')
         if tlosses is None:
             env_acc["soundspeed"] = self.sound_speeds[:, 1].mean()
             tlosses = pm.compute_transmission_loss(env_acc, mode='semicoherent')
         if tlosses is None:
             return pd.DataFrame({})
-        sound_speed = env_acc['soundspeed'][:,1].mean()
+        sound_speed = self.sound_speeds[:,1].mean()
         tlosses_dB = -20 * ut.log10(np.abs(tlosses))
         for i, alpha_loss in enumerate(self.alpha(freq, depthsb.max(), sound_speed) * rx_ranges[:-1]):
             tlosses_dB[tlosses_dB.columns[i]] += alpha_loss

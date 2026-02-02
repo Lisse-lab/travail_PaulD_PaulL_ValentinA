@@ -51,7 +51,7 @@ class Conv :
     def round_area(self, area : tuple[int, int]):
         return (int(area[0]+0.5), int(area[1]+0.5))
 
-    def area2utm(self, area):
+    def area2utm(self, area : tuple[int, int]):
         return ((area[0]+0.5) * self.width_area + self.xmin, (area[1]+0.5) * self.width_area + self.ymin)
     
     def lla2area(self, lat : float, lon : float):

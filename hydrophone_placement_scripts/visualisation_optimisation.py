@@ -56,14 +56,12 @@ def create_app(mod):
     df = mod.calculator.df_areas.groupby(['x', 'y'], as_index=False).agg({'w': 'sum'})  #, 'error': 'mean'})
     df["polygone"] = df.apply(lambda row : Polygon(mod.converter.area2perim_lla((row.x, row.y))), axis=1)
     df["density"] = df.apply(lambda row : mod.calculator.calc_mu.h(mod.converter.area2utm((row.x,row.y))[0], mod.converter.area2utm((row.x,row.y))[1]), axis = 1)
-    
     values = mod.bayesian_process.set_of_npointsbayesian.values
     expected_improvements = mod.bayesian_process.expected_improvements
     max_expected_improvement = max(expected_improvements)
     n_first_points = len(values) - len(expected_improvements)
     n_iter = len(values)
     best_iter = mod.bayesian_process.best_iteration()
-
     app.layout = html.Div([
         html.H1("Optimisation Visualisation", style={"textAlign": "center"}),
         html.Div([
@@ -207,7 +205,7 @@ def create_app(mod):
 if __name__ == "__main__":
     import hydrophone_placement_scripts.optimisation.class_mod as cls_mod
     
-    n_sensors = 5
+    n_sensors = 10
 
     mod =cls_mod.load(n_sensors)
     app = create_app(mod)

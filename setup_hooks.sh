@@ -11,7 +11,7 @@ fi
 
 # Création des fichiers .ipynb manquants
 echo "Création des fichiers .ipynb manquants..."
-for py_file in *_ntb.py; do
+find . -name "*_ntb.py" | while read -r py_file; do
     ipynb_file="${py_file/_ntb.py/.ipynb}"
     if [ ! -f "$ipynb_file" ]; then
         echo "Création de $ipynb_file..."

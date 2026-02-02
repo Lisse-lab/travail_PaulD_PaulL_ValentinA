@@ -8,7 +8,7 @@ if ! python -c "import jupytext" &> /dev/null; then
 fi
 
 # Convertir tous les notebooks et les ajouter
-for ipynb_file in *.ipynb; do
+find . -name "*.ipynb" | while read -r ipynb_file; do
     py_file="${ipynb_file%.ipynb}_ntb.py"
     echo "Traitement de $ipynb_file -> $py_file..."
     python -m jupytext --to py "$ipynb_file" --output "$py_file"

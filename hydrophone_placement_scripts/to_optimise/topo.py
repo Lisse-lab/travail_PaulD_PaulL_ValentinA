@@ -26,12 +26,14 @@ import hydrophone_placement_scripts.utils_scripts.utils as ut
 class Topo:
     path = os.path.join(os.path.dirname(__file__), "../datas/")
 
-    def __init__(self, converter : "Conv", new_dic_depths: bool = False, new_dic_substrats : bool = False, substrat : bool = True, save : bool = True):
+    def __init__(self, converter : "Conv", new_dic_depths: bool = False, new_dic_substrats : bool = False, substrat : bool = True, save : bool = True, height_sensor : float = 0):
         self.converter = converter
         self.save = save
         self.create_dic_depths(new_dic_depths)
         if substrat:
             self.create_dic_substrats(new_dic_substrats)
+        self.areas_available = np.array([area for area, depth in self.dic_depths.items() if depth > height_sensor])
+        self.xs_available, self.ys_available = self.converter.area2utm((self.areas_available[:,0], self.areas_available[:,1]))
 
     def create_dic_depths(self, new : bool = False):
         if (not new) & ("dic_depths.pkl" in os.listdir(os.path.join(self.path, "for_model"))):

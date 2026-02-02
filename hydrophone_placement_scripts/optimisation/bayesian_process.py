@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from hydrophone_placement_scripts.utils_scripts.class_points import NPoint
 
 class Bayesian_Process:
-    n_first_points = 50
+    n_first_points = 30
     min_expected_improvement = 0.001
     max_iter = 250
     ksi = 0.01
@@ -43,26 +43,25 @@ class Bayesian_Process:
             setattr(self, attr, value)
         self.kwargs_ga = {k[3:]: v for k, v in kwargs.items() if k.startswith("ga_")}
 
-    def update_Sigma_invSigma(self):
+    def update_Sigma(self):
         self.Sigma = self.sigmaf ** 2 * np.matrix([[npoint1.corr(npoint2) for npoint2 in self.set_of_npointsbayesian.set_of_npoints] for npoint1 in self.set_of_npointsbayesian.set_of_npoints]) + self.sigman ** 2 * np.eye(self.set_of_npointsbayesian.size)
-        self.invSigma = np.linalg.inv(self.Sigma)
 
     def update_mu(self):
-        self.mu = (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@self.set_of_npointsbayesian.values)[0,0] / (np.ones(self.set_of_npointsbayesian.size)@self.invSigma@np.ones(self.set_of_npointsbayesian.size))[0,0]
+        self.mu = (np.ones(self.set_of_npointsbayesian.size)@np.linalg.solve(self.Sigma, self.set_of_npointsbayesian.values))[0,0] / (np.ones(self.set_of_npointsbayesian.size)@np.linalg.solve(self.Sigma, np.ones(self.set_of_npointsbayesian.size)))[0,0]
         
     def neg_log_likelihood(self, params : list[float]):
         cls_points.Point.params_cor = params[2:]
         self.sigmaf = params[0]
         self.sigman = params[1]
-        self.update_Sigma_invSigma()
+        self.update_Sigma()
         self.update_mu()
-        return 1/2* ut.log(np.linalg.det(self.Sigma)) + 1/2*([v - self.mu for v in self.set_of_npointsbayesian.values]@self.invSigma@[v - self.mu for v in self.set_of_npointsbayesian.values])[0,0]
+        return 1/2* ut.log(np.linalg.det(self.Sigma)) + 1/2*([v - self.mu for v in self.set_of_npointsbayesian.values]@np.linalg.solve(self.Sigma, [v - self.mu for v in self.set_of_npointsbayesian.values]))[0,0]
 
     def max_likelihood(self):
         print("Maximisation of likelihood")
-        bounds = [(1e-6, None) for _ in range(5)]
+        bounds = [(1e-15, None) for _ in range(5)]
         params = np.concatenate([np.array([self.sigmaf, self.sigman]), cls_points.Point.params_cor])
-        result = optimize.minimize(self.neg_log_likelihood, params, method="Nelder-Mead", bounds = bounds, options={"disp" : True, "maxiter" : 1200})
+        result = optimize.minimize(self.neg_log_likelihood, params, method="L-BFGS-B", bounds = bounds)
         self.neg_log_likelihood(result.x)        
     
     def find_max(self, converter : "Conv", calculator : "Calculator"):
@@ -102,8 +101,8 @@ class Bayesian_Process:
             return 0
         elif npoint.in_water() & npoint.verify_range():
             k = self.sigmaf ** 2 * np.matrix([npoint.corr(e) for e in self.set_of_npointsbayesian.set_of_npoints])
-            fexpec = self.mu + (k @ self.invSigma @ [v - self.mu for v in self.set_of_npointsbayesian.values])[0,0]
-            s = (self.sigmaf ** 2 - k @ self.invSigma @ k.T)[0,0]
+            fexpec = self.mu + (k @ np.linalg.solve(self.Sigma, [v - self.mu for v in self.set_of_npointsbayesian.values]))[0,0]
+            s = (self.sigmaf ** 2 -k @ np.linalg.solve(self.Sigma, k.T))[0,0]
             a = (fexpec - self.val_max - self.ksi)
             return max(a / 2 * (1 + math.erf(a/(2*s))) + s * 1/math.sqrt(2*math.pi) * math.exp(-1/2 * (a/s)**2), 0) #the values should be strictly positive
         else:

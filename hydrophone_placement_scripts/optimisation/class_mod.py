@@ -106,15 +106,15 @@ class Model:
     def create_optimisation_history(self, show : bool = False):
         # Récupère les données
         expected_improvements = self.bayesian_process.expected_improvements
+        import numpy as np #à supprimer plus tard
+        expected_improvements = [ei[0,0] if isinstance(ei, np.ndarray) else ei for ei in expected_improvements] #à supprimer plus tard
         values = self.bayesian_process.set_of_npointsbayesian.values
-        best_values = self.bayesian_process.max_values()  # Assure-toi que cette méthode existe
-
+        best_values = self.bayesian_process.max_values() 
         n1 = len(expected_improvements)
         n2 = len(values)
 
         x1 = list(range(n2-n1+1, 1+n2))  # Abscisses pour les "Expected Improvements"
         x2 = list(range(1,1+n2))           # Abscisses pour les "Values" et "Best Value"
-
         # Crée une figure avec deux axes Y
         fig = make_subplots(specs=[[{"secondary_y": True}]])
 

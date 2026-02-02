@@ -15,19 +15,20 @@ if TYPE_CHECKING:
 from typing import Callable
 
 class Genetic_Algo:
-    n_individuals = 20
-    n_parents = 10
+    n_individuals = 100
+    n_parents = 30
     C_prob = 1.9
-    #p_mut = 0.01
-    n_run = 20
-    max_iter = 200
-    n_improvements = 20
+    p_mut = 0.1
+    n_run = 60
+    n_sep = 4
+    max_iter = 500
+    n_improvements = 10
     n_processes = cpu_count() - 1 if cpu_count()>1 else 1
     save_run = True
 
     probs = None
     
-    def __init__(self, id : int, converter : "Conv", calculator : "Calculator", n_tetrahedras : int, range : float, esp_improv : Callable[["NPoint"], float], path : str, n_sep : int, **kwargs_ga):
+    def __init__(self, id : int, converter : "Conv", calculator : "Calculator", n_tetrahedras : int, range : float, esp_improv : Callable[["NPoint"], float], path : str, **kwargs_ga):
         for attr, value in kwargs_ga.items():
             if not hasattr(self, attr):
                 raise AttributeError(f"Genetic_Algo has no attribute '{attr}'.")
@@ -37,7 +38,6 @@ class Genetic_Algo:
         self.n_tetrahedras = n_tetrahedras
         self.range = range
         self.esp_improv = esp_improv
-        self.n_sep = n_sep
         self.calculate_probs()
         self.set_of_best = cls_points.Set_of_NPointsGenetic()
         self.path = os.path.join(path, f"Runs/Iteration_{id}")
