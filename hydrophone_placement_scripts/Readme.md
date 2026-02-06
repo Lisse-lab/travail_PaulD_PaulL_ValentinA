@@ -42,4 +42,10 @@ De plus, l'erreur dépend beaucoup de la position géométrique du réseau. Ains
 
 Enfin, j'ai joint ma bibliographie (Stage UQO.rdf)
 
-J'ai aussi été obligé de découper en deux le fichier substrat.csv, il n'existe pas sur le github et on peut utiliser le noteboo for_substrat pour le créer
+J'ai aussi été obligé de découper en deux le fichier substrat.csv, il n'existe pas sur le github et on peut utiliser le notebook for_substrat pour le créer
+
+Pour cette partie nous avons besoin du module belhop, voici comment l'installer :
+- Télécharger l'acoustic toolbox sur le lien (http://oalib.hlsresearch.com/AcousticsToolbox/) ou trouver un lien, dans la docs de arlpy : (Underwater acoustic propagation modeling pour ce qui nous intéresse) puis une fois sur le site il faut aller dans models & software -> Acoustics Toolbox
+- Prendre fichier binairies
+- Extraire (pour windows, seulement la partie at, pas besoin de macosx)
+- Ajouter le belhop.exe au path de l'ordinateur (rajouter atWin10_2020_11_4/windows-bin-20201102)
