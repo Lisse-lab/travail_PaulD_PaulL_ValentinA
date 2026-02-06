@@ -18,5 +18,5 @@ seaborn
 openpyxl
 nbformat
 jupytext
-#attention il faut une version python entre 3.9 et 3.12
+#attention il faut une version python entre 3.9 et 3.12 pour arlpy
 #sometimes hydrophone sensitivity or sample rate is hardcoded in paul's code
